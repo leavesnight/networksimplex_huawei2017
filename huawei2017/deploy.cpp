@@ -6,6 +6,8 @@
 #include <limits.h>
 #include <ctime>
 #include <set>
+#include <vector>
+#include <map>
 //#include <algorithm>
 //#include <iterator>
 using namespace std;
@@ -36,8 +38,9 @@ NodeVertex v[MAX_NODE_NUM+1];
 void networkSimplexAlg(int n,int cServer,set<int>& pos);
 void findOutgoing(int& k,int& l,bool& outPTop,bool bResult,
 				  int& min,int p,int q,bool bEqual=false,bool directPlus=false);
-void processNetwork(int n,set<int>& pos);
+void processNetwork(int n,set<int>& pos,int cServer,int& totalCost,bool bMakeRoute=false);
 void deleteFromNet(int j,int& flow,int n,set<int>& pos);
+void deleteAndCalcFromNet(int j,int& flow,int n,set<int>& pos,int& flowCost,int& srcID);
 void calcCost(int cServer,int n,int& totalCost,int& totalNum);
 void printPath(int i,int& flow,int n,ostream& sout);
 void printTree();
@@ -113,8 +116,8 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 				nServerPos.insert(nGreedyServerPos.begin(),nGreedyServerPos.end());
 				nServerPos.insert(i);
 				networkSimplexAlg(n,cServer,nServerPos);
-				processNetwork(n,nServerPos);
 				int nTotalCost=0,nTotalNum=0;
+				processNetwork(n,nServerPos,cServer,nTotalCost);
 				calcCost(cServer,n,nTotalCost,nTotalNum);
 				if (nMinCost>nTotalCost){
 					nMinCost=nTotalCost;
@@ -149,8 +152,8 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 				nServerPos.insert(i);
 				nServerPos.insert(i2);
 				networkSimplexAlg(n,cServer,nServerPos);
-				processNetwork(n,nServerPos);
 				int nTotalCost=0,nTotalNum=0;
+				processNetwork(n,nServerPos,cServer,nTotalCost);
 				calcCost(cServer,n,nTotalCost,nTotalNum);
 				if (nMinCost>nTotalCost){
 					nMinCost=nTotalCost;
@@ -182,9 +185,12 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	int nLines=0;
 	if (nMinCost<nd*cServer){
 		nServerPos.clear();
+		//nMinPosCount=1;nMinPos[0]=1;
 		nServerPos.insert(nMinPos,nMinPos+nMinPosCount);
 		networkSimplexAlg(n,cServer,nServerPos);
-		processNetwork(n,nServerPos);
+		int nTotalCost=0;
+		processNetwork(n,nServerPos,cServer,nTotalCost,true);
+		networkSimplexAlg(n,cServer,nServerPos);
 		for (int i=1;i<n+1;i++){
 			while (g[0][i].x>0){
 				sout<<i-1<<" ";
@@ -606,16 +612,65 @@ void findOutgoing(int& k,int& l,bool& outPTop,bool bResult,
 		cout<<"ErrorMin";*/
 }
 
-void processNetwork(int n,set<int>& pos){
+void calcCost(int cServer,int n,int& totalCost,int& totalNum){
 	for (int i=1;i<n+1;i++){
-		if (g[0][i].x>0&&pos.find(i)==pos.end()&&g[0][i].x<v[i].d){
-			int nFlow,nFlowLeft=v[i].d-g[0][i].x;
-			g[0][i].x=v[i].d;
-			do{
-				nFlow=nFlowLeft;
-				deleteFromNet(i,nFlow,n,pos);
-				nFlowLeft-=nFlow;
-			}while(nFlowLeft!=0);
+		if (g[0][i].x>0){
+			totalCost+=cServer;
+			totalNum++;
+		}
+		for (int j=1;j<n+1;j++){
+			if (g[i][j].x>0){
+				//totalCost+=g[i][j].x*g[i][j].c;
+				cout<<"ErrorFlow!"<<endl;
+			}
+		}
+	}
+}
+
+void processNetwork(int n,set<int>& pos,int cServer,int& totalCost,bool bMakeRoute){
+	typedef pair<int,int> Pair;
+	map<int,int> mapFlowID;
+	for (int i=1;i<n+1;i++){
+		if (v[i].d>0&&pos.find(i)==pos.end()){
+			if (g[0][i].x>0&&g[0][i].x<v[i].d){
+				int nFlow,nFlowLeft=v[i].d-g[0][i].x;
+				g[0][i].x=v[i].d;
+				do{
+					nFlow=nFlowLeft;
+					deleteFromNet(i,nFlow,n,pos);
+					nFlowLeft-=nFlow;
+				}while(nFlowLeft!=0);
+			}
+			if (g[0][i].x==0){
+				int nFlowLeft=v[i].d,nFlowCost=0,nFlow,nSrcID;
+				mapFlowID.clear();
+				do{
+					nFlow=nFlowLeft;
+					deleteAndCalcFromNet(i,nFlow,n,pos,nFlowCost,nSrcID);
+					nFlowLeft-=nFlow;
+					auto tmpIter=mapFlowID.find(nSrcID);
+					if (tmpIter==mapFlowID.end())
+						mapFlowID.insert(Pair(nSrcID,nFlow));
+					else
+						(*tmpIter).second+=nFlow;
+				}while (nFlowLeft!=0);
+				if (nFlowCost<cServer){
+					totalCost+=nFlowCost;
+				}else{
+					g[0][i].x=v[i].d;
+					for (auto i=mapFlowID.begin();i!=mapFlowID.end();i++){
+						g[0][i->first].x-=i->second;
+					}
+				}
+			}
+		}
+	}
+	if (bMakeRoute){
+		pos.clear();
+		for (int i=1;i<n+1;i++){
+			if (g[0][i].x>0){
+				pos.insert(i);
+			}
 		}
 	}
 }
@@ -634,17 +689,20 @@ void deleteFromNet(int j,int& flow,int n,set<int>& pos){
 		}
 	}
 }
-
-void calcCost(int cServer,int n,int& totalCost,int& totalNum){
+void deleteAndCalcFromNet(int j,int& flow,int n,set<int>& pos,int& flowCost,int& srcID){
 	for (int i=1;i<n+1;i++){
-		if (g[0][i].x>0){
-			totalCost+=cServer;
-			totalNum++;
-		}
-		for (int j=1;j<n+1;j++){
-			if (g[i][j].x>0){
-				totalCost+=g[i][j].x*g[i][j].c;
+		if (g[i][j].x>0){
+			if (flow>g[i][j].x)
+				flow=g[i][j].x;
+			if (pos.find(i)!=pos.end()){
+				//g[0][i].x-=flow;
+				srcID=i;
+			}else{
+				deleteAndCalcFromNet(i,flow,n,pos,flowCost,srcID);
 			}
+			g[i][j].x-=flow;
+			flowCost+=g[i][j].c*flow;
+			break;
 		}
 	}
 }
