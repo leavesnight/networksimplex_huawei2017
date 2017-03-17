@@ -38,10 +38,10 @@ NodeVertex v[MAX_NODE_NUM+1];
 void networkSimplexAlg(int n,int cServer,set<int>& pos);
 void findOutgoing(int& k,int& l,bool& outPTop,bool bResult,
 				  int& min,int p,int q,bool bEqual=false,bool directPlus=false);
-void processNetwork(int n,set<int>& pos,int cServer,int& totalCost,bool bMakeRoute=false);
+void processNetwork(int n,set<int>& pos,int cServer,int& totalCost,bool bMakeRoute=false,bool bBug=true);
 void deleteFromNet(int j,int& flow,int n,set<int>& pos);
 void deleteAndCalcFromNet(int j,int& flow,int n,set<int>& pos,int& flowCost,int& srcID);
-void calcCost(int cServer,int n,int& totalCost,int& totalNum);
+bool calcCost(int cServer,int n,int& totalCost,int& totalNum);
 void printPath(int i,int& flow,int n,ostream& sout);
 void printTree();
 
@@ -108,6 +108,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	}*/
 	set<int> nServerPos,nGreedyServerPos;
 	int nMinCost=nd*cServer,nMinPos[MAX_CONSUME_NUM]={0},nMinPosCount=0;
+	//branchAndBound(n,cServer,nServerPos);
 	for (int k=0;k<nd;k++){
 		int min2Cost=INT_MAX,min2Pos=0,minPos=0;
 		for (int i=1;i<n+1;i++){
@@ -116,22 +117,22 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 				nServerPos.insert(nGreedyServerPos.begin(),nGreedyServerPos.end());
 				nServerPos.insert(i);
 				networkSimplexAlg(n,cServer,nServerPos);
-				int nTotalCost=0,nTotalNum=0;
-				processNetwork(n,nServerPos,cServer,nTotalCost);
+				int nTotalCost=0,nTotalNum=nMinPosCount;
+				processNetwork(n,nServerPos,cServer,nTotalCost,false,false);
+				nTotalCost=0;
 				calcCost(cServer,n,nTotalCost,nTotalNum);
 				if (nMinCost>nTotalCost){
 					nMinCost=nTotalCost;
 					minPos=i;
 				}
-				/*if (i==19){
-					cout<<"i History: "<<i<<" Cost: "<<nTotalCost<<endl;
-				}*/
 				if (min2Cost>nTotalCost){
 					min2Cost=nTotalCost;
 					min2Pos=i;
 					//cout<<"min2Pos History: "<<i<<" Cost: "<<min2Cost<<endl;
 				}
 			}
+			/*if (clock()-tmStart>60*CLOCKS_PER_SEC)
+				break;*/
 		}
 		if (minPos>0){
 			nGreedyServerPos.insert(minPos);
@@ -141,6 +142,8 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 			break;
 			//nGreedyServerPos.insert(min2Pos);
 		}
+		if (clock()-tmStart>60*CLOCKS_PER_SEC)
+				break;
 	}
 	nMinPosCount+=2;
 	for (int i=1;i<n+1;i++){
@@ -152,8 +155,9 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 				nServerPos.insert(i);
 				nServerPos.insert(i2);
 				networkSimplexAlg(n,cServer,nServerPos);
-				int nTotalCost=0,nTotalNum=0;
-				processNetwork(n,nServerPos,cServer,nTotalCost);
+				int nTotalCost=0,nTotalNum=nMinPosCount;
+				processNetwork(n,nServerPos,cServer,nTotalCost,false,false);
+				nTotalCost=0;
 				calcCost(cServer,n,nTotalCost,nTotalNum);
 				if (nMinCost>nTotalCost){
 					nMinCost=nTotalCost;
@@ -161,8 +165,10 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 					nMinPos[nMinPosCount-1]=i2;
 				}
 			}
+			if (clock()-tmStart>60*CLOCKS_PER_SEC)
+				break;
 		}
-		if (clock()-tmStart>85*CLOCKS_PER_SEC)
+		if (clock()-tmStart>60*CLOCKS_PER_SEC)
 			break;
 	}
 	cout<<"use time: "<<(clock()-tmStart)*1000/CLOCKS_PER_SEC<<"ms"<<endl;
@@ -185,12 +191,29 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	int nLines=0;
 	if (nMinCost<nd*cServer){
 		nServerPos.clear();
-		//nMinPosCount=1;nMinPos[0]=1;
+		//nMinPosCount=2;nMinPos[0]=38;nMinPos[1]=13;
 		nServerPos.insert(nMinPos,nMinPos+nMinPosCount);
 		networkSimplexAlg(n,cServer,nServerPos);
-		int nTotalCost=0;
+		int nTotalCost=0,nTotalNum=nMinPosCount;
+		/*while (!calcCost(cServer,n,nTotalCost,nTotalNum)){
+			nTotalNum=0;
+			for (int i=1;i<n+1;i++)
+				if (g[0][i].x>0){
+					nServerPos.insert(i);
+					nTotalNum++;
+				}
+			networkSimplexAlg(n,cServer,nServerPos);
+			nTotalCost=0;
+		}*/
 		processNetwork(n,nServerPos,cServer,nTotalCost,true);
+		calcCost(cServer,n,nTotalCost,nTotalNum);
 		networkSimplexAlg(n,cServer,nServerPos);
+
+		cout<<"Final nMinCost="<<nTotalCost<<" minPos=";
+		for (auto i=nServerPos.begin();i!=nServerPos.end();i++)
+			cout<<" "<<*i;
+		cout<<endl;
+
 		for (int i=1;i<n+1;i++){
 			while (g[0][i].x>0){
 				sout<<i-1<<" ";
@@ -249,6 +272,10 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	// 直接调用输出文件的方法输出到指定文件中(ps请注意格式的正确性，如果有解，第一行只有一个数据；第二行为空；第三行开始才是具体的数据，数据之间用一个空格分隔开)
 	topo_file=strTopo.c_str();
 	write_result(topo_file, filename);
+
+}
+
+void branchAndBound(int n,int cServer,set<int>& nServerPos){
 
 }
 
@@ -612,22 +639,29 @@ void findOutgoing(int& k,int& l,bool& outPTop,bool bResult,
 		cout<<"ErrorMin";*/
 }
 
-void calcCost(int cServer,int n,int& totalCost,int& totalNum){
+bool calcCost(int cServer,int n,int& totalCost,int& totalNum){
+	int tmpNum=0;
 	for (int i=1;i<n+1;i++){
 		if (g[0][i].x>0){
 			totalCost+=cServer;
-			totalNum++;
+			tmpNum++;
 		}
-		for (int j=1;j<n+1;j++){
-			if (g[i][j].x>0){
-				//totalCost+=g[i][j].x*g[i][j].c;
-				cout<<"ErrorFlow!"<<endl;
+	}
+	if (false&&tmpNum!=totalNum)
+		return false;
+	else{
+		for (int i=1;i<n+1;i++){
+			for (int j=1;j<n+1;j++){
+				if (g[i][j].x>0){
+					totalCost+=g[i][j].x*g[i][j].c;
+				}
 			}
 		}
+		return true;
 	}
 }
 
-void processNetwork(int n,set<int>& pos,int cServer,int& totalCost,bool bMakeRoute){
+void processNetwork(int n,set<int>& pos,int cServer,int& totalCost,bool bMakeRoute,bool bBug){
 	typedef pair<int,int> Pair;
 	map<int,int> mapFlowID;
 	for (int i=1;i<n+1;i++){
@@ -641,7 +675,7 @@ void processNetwork(int n,set<int>& pos,int cServer,int& totalCost,bool bMakeRou
 					nFlowLeft-=nFlow;
 				}while(nFlowLeft!=0);
 			}
-			if (g[0][i].x==0){
+			if (g[0][i].x==0&&bBug){
 				int nFlowLeft=v[i].d,nFlowCost=0,nFlow,nSrcID;
 				mapFlowID.clear();
 				do{
