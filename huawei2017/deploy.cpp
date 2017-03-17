@@ -118,8 +118,8 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 				nServerPos.insert(i);
 				networkSimplexAlg(n,cServer,nServerPos);
 				int nTotalCost=0,nTotalNum=nMinPosCount;
-				processNetwork(n,nServerPos,cServer,nTotalCost,false,false);
-				nTotalCost=0;
+				processNetwork(n,nServerPos,cServer,nTotalCost,false);
+				//nTotalCost=0;
 				calcCost(cServer,n,nTotalCost,nTotalNum);
 				if (nMinCost>nTotalCost){
 					nMinCost=nTotalCost;
@@ -142,8 +142,8 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 			break;
 			//nGreedyServerPos.insert(min2Pos);
 		}
-		if (clock()-tmStart>60*CLOCKS_PER_SEC)
-				break;
+		if (clock()-tmStart>40*CLOCKS_PER_SEC)
+			break;
 	}
 	nMinPosCount+=2;
 	for (int i=1;i<n+1;i++){
@@ -156,8 +156,8 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 				nServerPos.insert(i2);
 				networkSimplexAlg(n,cServer,nServerPos);
 				int nTotalCost=0,nTotalNum=nMinPosCount;
-				processNetwork(n,nServerPos,cServer,nTotalCost,false,false);
-				nTotalCost=0;
+				processNetwork(n,nServerPos,cServer,nTotalCost,false);
+				//nTotalCost=0;
 				calcCost(cServer,n,nTotalCost,nTotalNum);
 				if (nMinCost>nTotalCost){
 					nMinCost=nTotalCost;
@@ -165,10 +165,10 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 					nMinPos[nMinPosCount-1]=i2;
 				}
 			}
-			if (clock()-tmStart>60*CLOCKS_PER_SEC)
+			if (clock()-tmStart>40*CLOCKS_PER_SEC)
 				break;
 		}
-		if (clock()-tmStart>60*CLOCKS_PER_SEC)
+		if (clock()-tmStart>40*CLOCKS_PER_SEC)
 			break;
 	}
 	cout<<"use time: "<<(clock()-tmStart)*1000/CLOCKS_PER_SEC<<"ms"<<endl;
@@ -647,7 +647,7 @@ bool calcCost(int cServer,int n,int& totalCost,int& totalNum){
 			tmpNum++;
 		}
 	}
-	if (false&&tmpNum!=totalNum)
+	if (tmpNum!=totalNum)
 		return false;
 	else{
 		for (int i=1;i<n+1;i++){
