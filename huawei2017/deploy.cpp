@@ -1,12 +1,9 @@
 ﻿#include "deploy.h"
 #include <stdio.h>
-#include <iostream>
 #include <sstream>
 #include <string>
 #include <limits.h>
 #include <ctime>
-#include <set>
-#include <vector>
 #include <map>
 //#include <algorithm>
 //#include <iterator>
@@ -14,6 +11,7 @@ using namespace std;
 
 const int MAX_NODE_NUM=1000,MAX_LINES_NUM=50000,MAX_CONSUME_NUM=500;
 int g_count,g_leftCus,g_totalCost;
+clock_t g_tmStart=clock();
 
 struct Node{
 	int u;//upper bound, uij=[0,100];lower bound is lij=0
@@ -31,9 +29,15 @@ struct NodeVertex{//can store the NodeTree data
 	int depth;
 	int next;//deep first search
 	int pi;//node potential//two types for the step function from the ultimate source, πi[2]
+	vector<int> edge;
+};
+struct NodeConsumer{
+	int vid;//record the id in the network,+1
 };
 Node g[MAX_NODE_NUM+1][MAX_NODE_NUM+1];//0 is the super point/ultimate source
 NodeVertex v[MAX_NODE_NUM+1];
+NodeConsumer vCons[MAX_CONSUME_NUM+1];
+
 
 void networkSimplexAlg(int n,int cServer,set<int>& pos);
 void findOutgoing(int& k,int& l,bool& outPTop,bool bResult,
@@ -41,7 +45,7 @@ void findOutgoing(int& k,int& l,bool& outPTop,bool bResult,
 void processNetwork(int n,set<int>& pos,int cServer,int& totalCost,bool bMakeRoute=false,bool bBug=true);
 void deleteFromNet(int j,int& flow,int n,set<int>& pos);
 void deleteAndCalcFromNet(int j,int& flow,int n,set<int>& pos,int& flowCost,int& srcID);
-bool calcCost(int cServer,int n,int& totalCost,int& totalNum);
+bool calcCost(int cServer,int n,int& totalCost,int& totalNum,bool bTest=true);
 void printPath(int i,int& flow,int n,ostream& sout);
 void printTree();
 
@@ -54,7 +58,6 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 		"11 1 13\n21 22 2 20\n23 22 2 8\n1 3 3 11\n24 3 3 17\n27 "
 		"3 3 26\n24 3 3 10\n18 17 4 11\n1 19 5 26\n1 16 6 15\n15 "
 		"13 7 13\n4 5 8 18\n2 25 9 15\n0 7 10 10\n23 24 11 23";*/
-	clock_t tmStart=clock();
 	const char * topo_file;
 	string strTopo="";
 	int n,m,nd,nTmp,nTmp2;
@@ -79,6 +82,8 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 		nNum[3]=atoi(strTmp.substr(nTmp3+1,strTmp.length()-nTmp3-1).c_str());
 		g[nNum[0]+1][nNum[1]+1].u=nNum[2];//it starts from point 0, but we let it from 1
 		g[nNum[1]+1][nNum[0]+1].u=nNum[2];//bidirectional
+		v[nNum[0]+1].edge.push_back(nNum[1]+1);
+		v[nNum[1]+1].edge.push_back(nNum[0]+1);
 		g[nNum[0]+1][nNum[1]+1].c=nNum[3];
 		g[nNum[1]+1][nNum[0]+1].c=nNum[3];
 	}
@@ -91,11 +96,13 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 		nNum[2]=atoi(strTmp.substr(nTmp2+1,strTmp.length()-nTmp2-1).c_str());
 		v[nNum[1]+1].d=nNum[2];//it starts from point 0, but we let it from 1, the left one is all 0 except v0.d
 		v[nNum[1]+1].id=nNum[0]+1;//id+1, I think the d maybe [0
+		vCons[nNum[0]+1].vid=nNum[1]+1;
 	}
 	//make an initial of the networkSimplex
-	v[0].d=INT_MAX;//may not use v0.d
+	//v[0].d=INT_MAX;//may not use v0.d
 	for (int i=1;i<n+1;i++){
 		g[0][i].u=INT_MAX;//super point,>=5000*500
+		v[0].edge.push_back(i);
 	}
 	/*for (int i=0;i<n;i++){
 		for (int j=0;j<n;j++){
@@ -109,7 +116,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	set<int> nServerPos,nGreedyServerPos;
 	int nMinCost=nd*cServer,nMinPos[MAX_CONSUME_NUM]={0},nMinPosCount=0;
 	//branchAndBound(n,cServer,nServerPos);
-	for (int k=0;k<nd;k++){
+	/*for (int k=0;k<nd;k++){
 		int min2Cost=INT_MAX,min2Pos=0,minPos=0;
 		for (int i=1;i<n+1;i++){
 			if (nGreedyServerPos.find(i)==nGreedyServerPos.end()){
@@ -131,8 +138,8 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 					//cout<<"min2Pos History: "<<i<<" Cost: "<<min2Cost<<endl;
 				}
 			}
-			/*if (clock()-tmStart>60*CLOCKS_PER_SEC)
-				break;*/
+			if (clock()-g_tmStart>85*CLOCKS_PER_SEC)
+				break;
 		}
 		if (minPos>0){
 			nGreedyServerPos.insert(minPos);
@@ -142,7 +149,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 			break;
 			//nGreedyServerPos.insert(min2Pos);
 		}
-		if (clock()-tmStart>40*CLOCKS_PER_SEC)
+		if (clock()-g_tmStart>85*CLOCKS_PER_SEC)
 			break;
 	}
 	nMinPosCount+=2;
@@ -165,13 +172,26 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 					nMinPos[nMinPosCount-1]=i2;
 				}
 			}
-			if (clock()-tmStart>40*CLOCKS_PER_SEC)
+			if (clock()-g_tmStart>85*CLOCKS_PER_SEC)
 				break;
 		}
-		if (clock()-tmStart>40*CLOCKS_PER_SEC)
+		if (clock()-g_tmStart>85*CLOCKS_PER_SEC)
 			break;
-	}
-	cout<<"use time: "<<(clock()-tmStart)*1000/CLOCKS_PER_SEC<<"ms"<<endl;
+	}*/
+	//GA-genetic algorithm
+	
+	srand((int)time(0));
+	int nPop;
+	if (n<500)
+		nPop=n*2;
+	else
+		nPop=n*2;
+	GenAlg genAlg(n,nPop,nd,cServer);//20~30 chromosomes
+	genAlg.startGA(85);
+	nMinCost=genAlg.getMinCost();
+	nServerPos=genAlg.getBestServerPos();
+
+	cout<<"use time: "<<(clock()-g_tmStart)*1000/CLOCKS_PER_SEC<<"ms"<<endl;
 
 	cout<<"nMinCost="<<nMinCost<<" minPos=";
 	/*ostream_iterator<int,char> out_iter(cout," ");
@@ -179,6 +199,10 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	/*for_each(nMinServerPos.begin(),nMinServerPos.end(),[](int pos){
 		cout<<" "<<pos;
 	});*/
+	for (auto i=nServerPos.begin();i!=nServerPos.end();i++){
+		cout<<" "<<*i;
+	}
+	cout<<endl;
 	for (int i=0;i<nMinPosCount;i++)
 		cout<<" "<<nMinPos[i];
 	cout<<endl;
@@ -190,18 +214,14 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	ostringstream sout;
 	int nLines=0;
 	if (nMinCost<nd*cServer){
-		nServerPos.clear();
-		//nMinPosCount=2;nMinPos[0]=38;nMinPos[1]=13;
-		nServerPos.insert(nMinPos,nMinPos+nMinPosCount);
+		/*nServerPos.clear();
+		nServerPos.insert(nMinPos,nMinPos+nMinPosCount);*/
 		networkSimplexAlg(n,cServer,nServerPos);
 		int nTotalCost=0,nTotalNum=nMinPosCount;
-		/*while (!calcCost(cServer,n,nTotalCost,nTotalNum)){
-			nTotalNum=0;
-			for (int i=1;i<n+1;i++)
-				if (g[0][i].x>0){
-					nServerPos.insert(i);
-					nTotalNum++;
-				}
+		/*nTotalNum=nServerPos.size();
+		while (!calcCost(cServer,n,nTotalCost,nTotalNum)){
+			processNetwork(n,nServerPos,cServer,nTotalCost,true);
+			nTotalNum=nServerPos.size();
 			networkSimplexAlg(n,cServer,nServerPos);
 			nTotalCost=0;
 		}*/
@@ -266,6 +286,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 		g_totalCost=nd*cServer;
 	}
 	cout<<"Total cost: "<<g_totalCost<<endl;
+	//cout<<g_count<<endl;
 	strTopo=strTopo;
 	cin.get();
 
@@ -281,10 +302,11 @@ void branchAndBound(int n,int cServer,set<int>& nServerPos){
 
 void networkSimplexAlg(int n,int cServer,set<int>& pos){
 	int nTmp,nTmp2,nTmp3;
+	//g_count++;
 	//make an initial strongly feasible tree or solution
-	for (int i=1;i<n+1;i++)
-		for (int j=1;j<n+1;j++){
-			g[i][j].x=0;
+	for (int i=0;i<n+1;i++)
+		for (int k=0;k<v[i].edge.size();k++){
+			g[i][v[i].edge[k]].x=0;
 		}
 	v[0].next=1;//may not use v0.d
 	for (int i=1;i<n+1;i++){
@@ -309,13 +331,20 @@ void networkSimplexAlg(int n,int cServer,set<int>& pos){
 	}
 	//find the maximum residual reduced cost(-cπij/cπij for L/U)
 	int max;
+	/*for (int i=0;i<n+1;i++){
+		for (int k=0;k<v[i].edge.size();k++){
+			int j=v[i].edge[k];
+			g[i][j].cpi=g[i][j].c-v[i].pi+v[j].pi;
+		}
+	}*/
 	unsigned char bMayWrong=0;//if cπij uses one πi1 then if x<0,πIDi>!=0 will be a wrong trial;0false 1true 2may be correct
 	do{
 		int p,q;
 		max=0;
 		for (int i=0;i<n+1;i++){
-			for (int j=0;j<n+1;j++)
-				if (g[i][j].u>0&&!(!v[j].directToParent&&v[j].parent==i||v[i].directToParent&&v[i].parent==j)){//if the arc exists && it !∈ T;i!=j belongs to .u>0
+			for (int k=0;k<v[i].edge.size();k++){
+				int j=v[i].edge[k];
+				if (!(!v[j].directToParent&&v[j].parent==i||v[i].directToParent&&v[i].parent==j)){//if the arc exists && it !∈ T;i!=j belongs to .u>0
 					g[i][j].cpi=g[i][j].c-v[i].pi+v[j].pi;
 					if (!g[i][j].x){//belongs to L
 						if (g[i][j].cpi<-max){
@@ -329,6 +358,7 @@ void networkSimplexAlg(int n,int cServer,set<int>& pos){
 						}
 					}
 				}
+			}
 		}
 		if (max!=0){//try entering the arc(p,q)-><p,q> & take out the arc<k,l>->(k,l)
 			//find the outgoing arc<k,l>
@@ -594,6 +624,12 @@ void networkSimplexAlg(int n,int cServer,set<int>& pos){
 				}else{
 					v[pSearch].pi-=max;//vice versa
 				}
+				/*for (int i=0;i<v[pSearch].edge.size();i++){
+					int j=v[pSearch].edge[i];
+					g[pSearch][j].cpi=g[pSearch][j].c-v[pSearch].pi+v[j].pi;
+					g[j][pSearch].cpi=g[j][pSearch].c-v[j].pi+v[pSearch].pi;
+				}
+				g[0][pSearch].cpi=g[0][pSearch].c-v[0].pi+v[pSearch].pi;*/
 				while (v[pSearch].next!=nTmp){//traverse the T2;nTmp is released here for label
 					pSearch=v[pSearch].next;
 					v[pSearch].depth=v[v[pSearch].parent].depth+1;
@@ -602,6 +638,12 @@ void networkSimplexAlg(int n,int cServer,set<int>& pos){
 					}else{
 						v[pSearch].pi-=max;//vice versa
 					}
+					/*for (int i=0;i<v[pSearch].edge.size();i++){
+						int j=v[pSearch].edge[i];
+						g[pSearch][j].cpi=g[pSearch][j].c-v[pSearch].pi+v[j].pi;
+						g[j][pSearch].cpi=g[j][pSearch].c-v[j].pi+v[pSearch].pi;
+					}
+					g[0][pSearch].cpi=g[0][pSearch].c-v[0].pi+v[pSearch].pi;*/
 				}
 			}
 		}
@@ -639,7 +681,7 @@ void findOutgoing(int& k,int& l,bool& outPTop,bool bResult,
 		cout<<"ErrorMin";*/
 }
 
-bool calcCost(int cServer,int n,int& totalCost,int& totalNum){
+bool calcCost(int cServer,int n,int& totalCost,int& totalNum,bool bTest){
 	int tmpNum=0;
 	for (int i=1;i<n+1;i++){
 		if (g[0][i].x>0){
@@ -647,7 +689,7 @@ bool calcCost(int cServer,int n,int& totalCost,int& totalNum){
 			tmpNum++;
 		}
 	}
-	if (tmpNum!=totalNum)
+	if (bTest&&tmpNum!=totalNum)
 		return false;
 	else{
 		for (int i=1;i<n+1;i++){
@@ -783,4 +825,154 @@ void printTree(){
 		pSearch=v[pSearch].next;
 	}
 	while (v[pSearch].next!=0);
+}
+
+GenAlg::GenAlg(int bitSize,int popSize,int nd,int cServer):m_bestFit(0),
+	m_mutationRate(RAND_MAX*0.2),m_crossoverRate(RAND_MAX*0.9),//70%?80~95%?
+	m_chromoBitSize(bitSize),//0.05~0.3?0.5~1%?
+	m_cServer(cServer),m_maxFit(nd*cServer),
+	m_conCMax(10){//?
+	m_popSize=0;
+	int nSumD=bitSize;
+	for (int i=1;i<nd+1;i++){
+		nSumD+=v[vCons[i].vid].d;
+	}
+	cout<<nSumD<<endl;
+	while (m_popSize<popSize){
+		set<int> setTmp;
+		int k=rand();//*nSumD
+		/*for (int i=1;i<bitSize+1;i++){
+			//if (v[i].id>0){
+			//	if (rand()*(v[i].d+1)>=k)
+			//		setTmp.insert(i);
+			if (rand()>=k)
+				setTmp.insert(i);
+		}*/
+		for (int i=1;i<rand()%(bitSize+1)+1;i++){
+			setTmp.insert(rand()%bitSize+1);
+		}
+		/*for (int i=1;i<rand()%(nd+1)+1;i++){//rand()*nd/RAND_MAX+1
+			setTmp.insert(vCons[rand()%nd+1].vid);
+		}*/
+		Genome tmpGenome(setTmp);
+		m_pop.push_back(tmpGenome);
+		m_popSize++;
+		//tmpGenome.print();
+	}
+}
+void GenAlg::calcFit(int timeS){
+	m_totalFit=0;
+	for (int i=0;i<m_popSize;i++){
+		set<int> setTmp=m_pop[i].decodeToSet();
+		networkSimplexAlg(m_chromoBitSize,m_cServer,setTmp);
+		int nTotalCost=0,nTotalNum=0;
+		processNetwork(m_chromoBitSize,setTmp,m_cServer,nTotalCost,true);
+		//networkSimplexAlg(m_chromoBitSize,m_cServer,setTmp);
+		//nTotalCost=0;nTotalNum=setTmp.size();
+		calcCost(m_cServer,m_chromoBitSize,nTotalCost,nTotalNum);//,false);
+		if (nTotalCost<m_maxFit){
+			m_pop[i]=Genome(setTmp,m_maxFit-nTotalCost);
+			//m_pop[i].m_fitness=m_maxFit-nTotalCost;
+			if (m_pop[i].m_fitness>m_bestFit){
+				m_bestFit=m_pop[i].m_fitness;
+				m_bestGenome=m_pop[i];
+				m_convergCount=0;
+			}
+		}else
+			m_pop[i].m_fitness=0;
+		m_totalFit+=m_pop[i].m_fitness;
+		if (clock()-g_tmStart>=timeS*CLOCKS_PER_SEC)
+			break;
+	}
+}
+Genome& GenAlg::getChromoRoulette(){
+	double dSlice=rand()*m_totalFit/RAND_MAX;
+	//Genome gChosen;
+	double dNowFitSum=0;
+	for (int i=0;i<m_pop.size();i++){
+		dNowFitSum+=m_pop[i].m_fitness;
+		if (dNowFitSum>=dSlice){
+			//gChosen=m_pop[i];
+			return m_pop[i];
+			//break;
+		}
+	}
+}
+void GenAlg::crossover(vector<int>& chromo1,vector<int>& chromo2){
+	if (rand()<m_crossoverRate){
+		int pos=rand()%m_chromoBitSize+1;
+		int pos2=rand()%m_chromoBitSize+1;
+		if (pos<pos2){
+			int nTmp=pos;
+			pos=pos2;
+			pos2=nTmp;
+		}
+		if (chromo1.size()<pos/Genome::m_intBitNS+1)
+			chromo1.resize(pos/Genome::m_intBitNS+1,0);
+		if (chromo2.size()<pos/Genome::m_intBitNS+1)
+			chromo2.resize(pos/Genome::m_intBitNS+1,0);
+		int i=pos2/Genome::m_intBitNS,nTmp;
+		if (i<pos/Genome::m_intBitNS){
+			nTmp=chromo1[i]&(0x1<<Genome::m_intBitNS+1)-(0x1<<pos2%Genome::m_intBitNS);
+			chromo1[i]&=~((0x1<<Genome::m_intBitNS+1)-(0x1<<pos2%Genome::m_intBitNS));
+			chromo1[i]|=chromo2[i]&(0x1<<Genome::m_intBitNS+1)-(0x1<<pos2%Genome::m_intBitNS);
+			chromo2[i]&=~((0x1<<Genome::m_intBitNS+1)-(0x1<<pos2%Genome::m_intBitNS));
+			chromo2[i]|=nTmp;
+			for (i=i+1;i<pos/Genome::m_intBitNS;i++){
+				int nTmp=chromo1[i];
+				chromo1[i]=chromo2[i];
+				chromo2[i]=nTmp;
+			}
+			nTmp=chromo1[i]&(0x1<<pos%Genome::m_intBitNS+1)-1;
+			chromo1[i]&=~((0x1<<pos%Genome::m_intBitNS+1)-1);
+			chromo1[i]|=chromo2[i]&(0x1<<pos%Genome::m_intBitNS+1)-1;
+			chromo2[i]&=~((0x1<<pos%Genome::m_intBitNS+1)-1);
+			chromo2[i]|=nTmp;
+		}else{
+			nTmp=chromo1[i]&(0x1<<pos%Genome::m_intBitNS+1)-(0x1<<pos2%Genome::m_intBitNS);
+			chromo1[i]&=~((0x1<<pos%Genome::m_intBitNS+1)-(0x1<<pos2%Genome::m_intBitNS));
+			chromo1[i]|=chromo2[i]&(0x1<<pos%Genome::m_intBitNS+1)-(0x1<<pos2%Genome::m_intBitNS);
+			chromo2[i]&=~((0x1<<pos%Genome::m_intBitNS+1)-(0x1<<pos2%Genome::m_intBitNS));
+			chromo2[i]|=nTmp;
+		}
+	}
+}
+void GenAlg::mutate(vector<int>& chromo){
+	int i=rand()%m_chromoBitSize+1;
+	if (rand()<m_mutationRate){
+		if (chromo.size()<i/Genome::m_intBitNS+1)
+			chromo.resize(i/Genome::m_intBitNS+1,0);
+		chromo[i/Genome::m_intBitNS]^=0x1<<i%Genome::m_intBitNS;
+	}
+}
+void GenAlg::startGA(int timeS){
+	vector<Genome> popNew;
+	m_convergCount=0;
+	while (m_convergCount<m_conCMax){
+		popNew.clear();
+		m_convergCount++;
+		cout<<m_convergCount<<endl;
+		calcFit(timeS);
+		if (clock()-g_tmStart>=timeS*CLOCKS_PER_SEC)
+			break;
+		int i=0;
+		while(i<m_popSize-1){
+			Genome genomeF=getChromoRoulette();
+			Genome genomeM=getChromoRoulette();
+			crossover(genomeF.m_genome,genomeM.m_genome);
+			mutate(genomeF.m_genome);
+			mutate(genomeM.m_genome);
+			popNew.push_back(genomeF);
+			popNew.push_back(genomeM);
+			i+=2;
+		}
+		if (i==m_popSize-1){
+			Genome genomeF=getChromoRoulette();
+			mutate(genomeF.m_genome);
+			popNew.push_back(genomeF);
+		}
+		for (i=0;i<m_popSize;i++){
+			m_pop[i]=popNew[i];
+		}
+	}
 }

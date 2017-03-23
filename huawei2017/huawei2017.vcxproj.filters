@@ -29,5 +29,11 @@
     <ClInclude Include="deploy.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="lib\lib_io.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="lib\lib_time.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
