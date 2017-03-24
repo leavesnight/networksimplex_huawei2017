@@ -115,9 +115,15 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	}*/
 	set<int> nServerPos,nGreedyServerPos;
 	int nMinCost=nd*cServer,nMinPos[MAX_CONSUME_NUM]={0},nMinPosCount=0;
+	/*for (int i=0;i<nMinPosCount;i++){
+		if (nMinPos[i]>0){
+			nMinPos[i]++;
+		}
+	}*/
 	//branchAndBound(n,cServer,nServerPos);
-	/*for (int k=0;k<nd;k++){
+	for (int k=0;k<nd;k++){
 		int min2Cost=INT_MAX,min2Pos=0,minPos=0;
+		int nCostBefore=nMinCost;
 		for (int i=1;i<n+1;i++){
 			if (nGreedyServerPos.find(i)==nGreedyServerPos.end()){
 				nServerPos.clear();
@@ -138,21 +144,23 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 					//cout<<"min2Pos History: "<<i<<" Cost: "<<min2Cost<<endl;
 				}
 			}
-			if (clock()-g_tmStart>85*CLOCKS_PER_SEC)
+			if (clock()-g_tmStart>45*CLOCKS_PER_SEC)
 				break;
 		}
 		if (minPos>0){
 			nGreedyServerPos.insert(minPos);
 			nMinPos[nMinPosCount]=minPos;
 			nMinPosCount++;
+			cout<<nCostBefore<<" after greedy: "<<nMinCost<<endl;
+			if (nCostBefore-nMinCost<cServer) break;
 		}else{
 			break;
 			//nGreedyServerPos.insert(min2Pos);
 		}
-		if (clock()-g_tmStart>85*CLOCKS_PER_SEC)
+		if (clock()-g_tmStart>45*CLOCKS_PER_SEC)
 			break;
 	}
-	nMinPosCount+=2;
+	/*nMinPosCount+=2;
 	for (int i=1;i<n+1;i++){
 		for (int i2=1;i2<n+1;i2++){
 			if (i2!=i&&(nGreedyServerPos.find(i)==nGreedyServerPos.end()||
@@ -183,11 +191,13 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	srand((int)time(0));
 	int nPop;
 	if (n<500)
-		nPop=n*2;
+		nPop=500;
 	else
-		nPop=n*2;
-	GenAlg genAlg(n,nPop,nd,cServer);//20~30 chromosomes
-	genAlg.startGA(85);
+		nPop=200;
+	GenAlg genAlg(n,nPop,nd,cServer,nGreedyServerPos);//20~30 chromosomes
+	//genAlg.startGA(85);
+	genAlg.startPSO(85,0.9*RAND_MAX,0.5*RAND_MAX,0.5*RAND_MAX);
+	//genAlg.startPSO(85,1,2,2);
 	nMinCost=genAlg.getMinCost();
 	nServerPos=genAlg.getBestServerPos();
 
@@ -827,7 +837,7 @@ void printTree(){
 	while (v[pSearch].next!=0);
 }
 
-GenAlg::GenAlg(int bitSize,int popSize,int nd,int cServer):m_bestFit(0),
+GenAlg::GenAlg(int bitSize,int popSize,int nd,int cServer,set<int> greedyPos):m_bestFit(0),
 	m_mutationRate(RAND_MAX*0.2),m_crossoverRate(RAND_MAX*0.9),//70%?80~95%?
 	m_chromoBitSize(bitSize),//0.05~0.3?0.5~1%?
 	m_cServer(cServer),m_maxFit(nd*cServer),
@@ -838,19 +848,22 @@ GenAlg::GenAlg(int bitSize,int popSize,int nd,int cServer):m_bestFit(0),
 		nSumD+=v[vCons[i].vid].d;
 	}
 	cout<<nSumD<<endl;
-	while (m_popSize<popSize){
+	while (m_popSize<popSize-1){
 		set<int> setTmp;
 		int k=rand();//*nSumD
-		/*for (int i=1;i<bitSize+1;i++){
+		for (int i=1;i<bitSize+1;i++){
 			//if (v[i].id>0){
 			//	if (rand()*(v[i].d+1)>=k)
 			//		setTmp.insert(i);
 			if (rand()>=k)
 				setTmp.insert(i);
-		}*/
-		for (int i=1;i<rand()%(bitSize+1)+1;i++){
-			setTmp.insert(rand()%bitSize+1);
+			/*if (greedyPos.find(i)!=greedyPos.end())
+				if (rand()>=k)
+					setTmp.insert(i);*/
 		}
+		/*for (int i=1;i<rand()%(bitSize+1)+1;i++){
+			setTmp.insert(rand()%bitSize+1);
+		}*/
 		/*for (int i=1;i<rand()%(nd+1)+1;i++){//rand()*nd/RAND_MAX+1
 			setTmp.insert(vCons[rand()%nd+1].vid);
 		}*/
@@ -859,6 +872,8 @@ GenAlg::GenAlg(int bitSize,int popSize,int nd,int cServer):m_bestFit(0),
 		m_popSize++;
 		//tmpGenome.print();
 	}
+	m_pop.push_back(Genome(greedyPos));
+	m_popSize++;
 }
 void GenAlg::calcFit(int timeS){
 	m_totalFit=0;
@@ -898,10 +913,12 @@ Genome& GenAlg::getChromoRoulette(){
 		}
 	}
 }
-void GenAlg::crossover(vector<int>& chromo1,vector<int>& chromo2){
-	if (rand()<m_crossoverRate){
+void GenAlg::crossover(vector<int>& chromo1,vector<int>& chromo2,double crossoverRate,int type){
+	if (rand()<crossoverRate){
 		int pos=rand()%m_chromoBitSize+1;
 		int pos2=rand()%m_chromoBitSize+1;
+		if (type==0)
+			pos2=0;
 		if (pos<pos2){
 			int nTmp=pos;
 			pos=pos2;
@@ -913,10 +930,10 @@ void GenAlg::crossover(vector<int>& chromo1,vector<int>& chromo2){
 			chromo2.resize(pos/Genome::m_intBitNS+1,0);
 		int i=pos2/Genome::m_intBitNS,nTmp;
 		if (i<pos/Genome::m_intBitNS){
-			nTmp=chromo1[i]&(0x1<<Genome::m_intBitNS+1)-(0x1<<pos2%Genome::m_intBitNS);
-			chromo1[i]&=~((0x1<<Genome::m_intBitNS+1)-(0x1<<pos2%Genome::m_intBitNS));
-			chromo1[i]|=chromo2[i]&(0x1<<Genome::m_intBitNS+1)-(0x1<<pos2%Genome::m_intBitNS);
-			chromo2[i]&=~((0x1<<Genome::m_intBitNS+1)-(0x1<<pos2%Genome::m_intBitNS));
+			nTmp=chromo1[i]&(0x1<<Genome::m_intBitNS)-(0x1<<pos2%Genome::m_intBitNS);
+			chromo1[i]&=~((0x1<<Genome::m_intBitNS)-(0x1<<pos2%Genome::m_intBitNS));
+			chromo1[i]|=chromo2[i]&(0x1<<Genome::m_intBitNS)-(0x1<<pos2%Genome::m_intBitNS);
+			chromo2[i]&=~((0x1<<Genome::m_intBitNS)-(0x1<<pos2%Genome::m_intBitNS));
 			chromo2[i]|=nTmp;
 			for (i=i+1;i<pos/Genome::m_intBitNS;i++){
 				int nTmp=chromo1[i];
@@ -959,7 +976,7 @@ void GenAlg::startGA(int timeS){
 		while(i<m_popSize-1){
 			Genome genomeF=getChromoRoulette();
 			Genome genomeM=getChromoRoulette();
-			crossover(genomeF.m_genome,genomeM.m_genome);
+			crossover(genomeF.m_genome,genomeM.m_genome,m_crossoverRate);
 			mutate(genomeF.m_genome);
 			mutate(genomeM.m_genome);
 			popNew.push_back(genomeF);
@@ -974,5 +991,118 @@ void GenAlg::startGA(int timeS){
 		for (i=0;i<m_popSize;i++){
 			m_pop[i]=popNew[i];
 		}
+	}
+}
+void GenAlg::startPSO(int timeS,int w,int c1,int c2){
+	m_convergCount=0;
+	/*for (int i=0;i<m_popSize;i++){
+		if (m_pop[i].m_genome.size()<m_chromoBitSize/Genome::m_intBitNS+1)
+			m_pop[i].m_genome.resize(m_chromoBitSize/Genome::m_intBitNS+1,0);
+		vector<int> nV0;
+		int k=0,nTmp=0;
+		for (int j=1;j<m_chromoBitSize+1;j++){
+			if (j/Genome::m_intBitNS>k){
+				k=j/Genome::m_intBitNS;
+				nV0.push_back(nTmp);
+				nTmp=0;
+			}
+			nTmp|=rand()%2<<j%Genome::m_intBitNS;
+		}
+		nV0.push_back(nTmp);
+		m_v.push_back(Genome(nV0));
+	}*/
+	m_pBest=m_pop;
+	while (m_convergCount<m_conCMax){
+		m_convergCount++;
+		cout<<m_convergCount<<endl;
+		calcPGBest(timeS);
+		if (clock()-g_tmStart>=timeS*CLOCKS_PER_SEC)
+			break;
+		int i=0;
+		while(i<m_popSize){
+			Genome genomeP=m_pBest[i],genomeG=m_bestGenome;
+			if (rand()<w){
+				int pos=rand()%m_chromoBitSize+1,pos2=rand()%m_chromoBitSize+1;
+				if (pos<pos2){
+					int nTmp=pos;
+					pos=pos2;
+					pos2=nTmp;
+				}
+				if (m_pop[i].m_genome.size()<pos/Genome::m_intBitNS+1)
+					m_pop[i].m_genome.resize(pos/Genome::m_intBitNS+1,0);
+				int nTmp=m_pop[i].m_genome[pos/Genome::m_intBitNS]&0x1<<pos%Genome::m_intBitNS;
+				m_pop[i].m_genome[pos/Genome::m_intBitNS]&=~(0x1<<pos%Genome::m_intBitNS);
+				m_pop[i].m_genome[pos/Genome::m_intBitNS]|=m_pop[i].m_genome[pos2/Genome::m_intBitNS]&0x1<<pos2%Genome::m_intBitNS;
+				m_pop[i].m_genome[pos2/Genome::m_intBitNS]&=~(0x1<<pos2%Genome::m_intBitNS);
+				m_pop[i].m_genome[pos2/Genome::m_intBitNS]|=nTmp;
+			}
+			crossover(genomeP.m_genome,m_pop[i].m_genome,c1,0);
+			if (rand()%2==0)
+				m_pop[i]=genomeP;
+			crossover(genomeG.m_genome,m_pop[i].m_genome,c2);
+			if (rand()%2==0)
+				m_pop[i]=genomeG;
+			/*for (int j=0;j<m_chromoBitSize/Genome::m_intBitNS+1;j++){
+				m_v[i].m_genome[j/Genome::m_intBitNS]=w*m_v[i].m_genome[j/Genome::m_intBitNS]+
+					c1*rand()*1.0/RAND_MAX*(m_pBest[i].m_genome[j/Genome::m_intBitNS]-m_pop[i].m_genome[j/Genome::m_intBitNS])
+					+c2*rand()*1.0/RAND_MAX*(m_bestGenome.m_genome[j/Genome::m_intBitNS]-m_pop[i].m_genome[j/Genome::m_intBitNS]);
+				m_pop[i].m_genome[j/Genome::m_intBitNS]+=m_v[i].m_genome[j/Genome::m_intBitNS]*1;
+			}
+			m_pop[i].m_genome[m_chromoBitSize/Genome::m_intBitNS]&=~((0x1<<Genome::m_intBitNS)-(0x1<<m_chromoBitSize%Genome::m_intBitNS+1));*/
+			i++;
+		}
+		/*int loop=0;
+		Genome genomeLS=m_bestGenome;
+		do{
+			int pos=rand()%m_chromoBitSize+1,pos2=rand()%m_chromoBitSize+1;
+			if (pos<pos2){
+				int nTmp=pos;
+				pos=pos2;
+				pos2=nTmp;
+			}
+			if (genomeLS.m_genome.size()<pos/Genome::m_intBitNS+1)
+				genomeLS.m_genome.resize(pos/Genome::m_intBitNS+1,0);
+			genomeLS.m_genome[pos/Genome::m_intBitNS]^=0x1<<pos%Genome::m_intBitNS;
+			genomeLS.m_genome[pos/Genome::m_intBitNS]^=0x1<<pos2%Genome::m_intBitNS;
+			set<int> setTmp=genomeLS.decodeToSet();
+			networkSimplexAlg(m_chromoBitSize,m_cServer,setTmp);
+			int nTotalCost=0,nTotalNum=0;
+			processNetwork(m_chromoBitSize,setTmp,m_cServer,nTotalCost,true);
+			calcCost(m_cServer,m_chromoBitSize,nTotalCost,nTotalNum);
+			if (m_maxFit-nTotalCost>genomeLS.m_fitness){
+				genomeLS=Genome(setTmp,m_maxFit-nTotalCost);
+			}else
+				loop++;
+		}
+		while (loop<m_convergCount/2);
+		if (genomeLS.m_fitness>m_bestGenome.m_fitness){
+			m_bestGenome=genomeLS;
+		}*/
+	}
+}
+void GenAlg::calcPGBest(int timeS){
+	for (int i=0;i<m_popSize;i++){
+		set<int> setTmp=m_pop[i].decodeToSet();
+		networkSimplexAlg(m_chromoBitSize,m_cServer,setTmp);
+		int nTotalCost=0,nTotalNum=0;
+		processNetwork(m_chromoBitSize,setTmp,m_cServer,nTotalCost,true);
+		//networkSimplexAlg(m_chromoBitSize,m_cServer,setTmp);
+		//nTotalCost=0;nTotalNum=setTmp.size();
+		calcCost(m_cServer,m_chromoBitSize,nTotalCost,nTotalNum);//,false);
+		if (nTotalCost<m_maxFit){
+			m_pop[i]=Genome(setTmp,m_maxFit-nTotalCost);
+			//m_pop[i].m_fitness=m_maxFit-nTotalCost;
+			if (m_pop[i].m_fitness>m_pBest[i].m_fitness){
+				m_pBest[i]=m_pop[i];
+				if (m_pop[i].m_fitness>m_bestGenome.m_fitness){
+					m_bestFit=m_pop[i].m_fitness;
+					m_bestGenome=m_pop[i];
+					m_convergCount=0;
+				}
+			}
+		}else
+			m_pop[i].m_fitness=0;
+		if (clock()-g_tmStart>=timeS*CLOCKS_PER_SEC)
+			break;
 	}
 }

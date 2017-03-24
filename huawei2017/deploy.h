@@ -57,13 +57,20 @@ private:
 	int m_cServer,m_maxFit;
 	int m_convergCount;
 	const int m_conCMax;
+
+	vector<Genome> m_pBest;
+	vector<Genome> m_v;
 public:
-	GenAlg(int bitSize,int popSize,int nd,int cServer);
+	GenAlg(int bitSize,int popSize,int nd,int cServer,set<int> greedyPos);
 	void calcFit(int timeS);
 	Genome& getChromoRoulette();
-	void crossover(vector<int>& chromo1,vector<int>& chromo2);
+	void crossover(vector<int>& chromo1,vector<int>& chromo2,double crossoverRate,int type=1);
 	void mutate(vector<int>& chromo);
 	void startGA(int timeS);//max run time(S)
+
+	void startPSO(int timeS,int w,int c1,int c2);
+	void calcPGBest(int timeS);
+
 	int getMinCost(){
 		return m_maxFit-m_bestFit;
 	}
