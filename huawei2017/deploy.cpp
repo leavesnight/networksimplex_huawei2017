@@ -5,12 +5,12 @@
 #include <limits.h>
 #include <ctime>
 #include <map>
-//#include <algorithm>
+#include <algorithm>
 //#include <iterator>
 using namespace std;
 
 const int MAX_NODE_NUM=1000,MAX_LINES_NUM=50000,MAX_CONSUME_NUM=500;
-int g_count,g_leftCus,g_totalCost;
+int g_count,g_leftCus,g_totalCost,g_count2;
 clock_t g_tmStart=clock();
 
 struct Node{
@@ -20,6 +20,15 @@ struct Node{
 	int cpi;//Cπij, 4 answers from pi[2]&pj[2] but we can just use 2 types
 	//[1]:cij-πi0+πj0 for LorU && [0]:cij-πi0+πjk(<0 then in) for L;[0]:cij-πik+πj0(>0 then in) for U
 	//though [0] is smaller for L or bigger for U, it may cause a contradiction that x0j/x0i for L/U doesn't change from >0 to 0
+	int idEdge;
+};
+struct NodeEdge{
+	int u;//upper bound, uij=[0,100];lower bound is lij=0
+	int c;//cost, cij=[0,100]
+	int x;//flow, xij
+	//int cpi;//Cπij
+	int idBegin;
+	int idEnd;
 };
 struct NodeVertex{//can store the NodeTree data
 	int d;//demand, di=[0,5000]
@@ -28,6 +37,7 @@ struct NodeVertex{//can store the NodeTree data
 	int parent;bool directToParent;//true means the arc is pointing to the parent else it's pointing from the parent
 	int depth;
 	int next;//deep first search
+	int prec;//anti deep first search
 	int pi;//node potential//two types for the step function from the ultimate source, πi[2]
 	vector<int> edge;
 };
@@ -35,17 +45,22 @@ struct NodeConsumer{
 	int vid;//record the id in the network,+1
 };
 Node g[MAX_NODE_NUM+1][MAX_NODE_NUM+1];//0 is the super point/ultimate source
+NodeEdge g_edge[MAX_NODE_NUM*(40+1)];//max 20 edges connecting to one point, and add 0i;
+int g_edgeCount;
+Node gTmp[MAX_NODE_NUM+1][MAX_NODE_NUM+1];
 NodeVertex v[MAX_NODE_NUM+1];
 NodeConsumer vCons[MAX_CONSUME_NUM+1];
+set<int> sFixedServerPos;
 
 
-void networkSimplexAlg(int n,int cServer,set<int>& pos);
+void networkSimplexAlg(int n,int cServer,set<int>& pos,Node g[][MAX_NODE_NUM+1],NodeVertex v[]);
 void findOutgoing(int& k,int& l,bool& outPTop,bool bResult,
 				  int& min,int p,int q,bool bEqual=false,bool directPlus=false);
-void processNetwork(int n,set<int>& pos,int cServer,int& totalCost,bool bMakeRoute=false,bool bBug=true);
-void deleteFromNet(int j,int& flow,int n,set<int>& pos);
-void deleteAndCalcFromNet(int j,int& flow,int n,set<int>& pos,int& flowCost,int& srcID);
-bool calcCost(int cServer,int n,int& totalCost,int& totalNum,bool bTest=true);
+void processNetwork(int n,set<int>& pos,int cServer,int& totalCost,Node g[][MAX_NODE_NUM+1],NodeVertex v[],
+					bool bMakeRoute=false,bool bBug=true);
+void deleteFromNet(int j,int& flow,int n,set<int>& pos,Node g[][MAX_NODE_NUM+1]);
+void deleteAndCalcFromNet(int j,int& flow,int n,set<int>& pos,int& flowCost,int& srcID,Node g[][MAX_NODE_NUM+1]);
+bool calcCost(int cServer,int n,int& totalCost,int& totalNum,Node g[][MAX_NODE_NUM+1],bool bTest=true);
 void printPath(int i,int& flow,int n,ostream& sout);
 void printTree();
 
@@ -80,12 +95,26 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 		nTmp3=strTmp.find(' ',nTmp2+1);
 		nNum[2]=atoi(strTmp.substr(nTmp2+1,nTmp3-nTmp2).c_str());
 		nNum[3]=atoi(strTmp.substr(nTmp3+1,strTmp.length()-nTmp3-1).c_str());
-		g[nNum[0]+1][nNum[1]+1].u=nNum[2];//it starts from point 0, but we let it from 1
-		g[nNum[1]+1][nNum[0]+1].u=nNum[2];//bidirectional
-		v[nNum[0]+1].edge.push_back(nNum[1]+1);
-		v[nNum[1]+1].edge.push_back(nNum[0]+1);
-		g[nNum[0]+1][nNum[1]+1].c=nNum[3];
-		g[nNum[1]+1][nNum[0]+1].c=nNum[3];
+		if (g[nNum[0]+1][nNum[1]+1].u==0){
+			g[nNum[0]+1][nNum[1]+1].u=nNum[2];//it starts from point 0, but we let it from 1
+			g[nNum[1]+1][nNum[0]+1].u=nNum[2];//bidirectional
+			v[nNum[0]+1].edge.push_back(nNum[1]+1);
+			v[nNum[1]+1].edge.push_back(nNum[0]+1);
+			g[nNum[0]+1][nNum[1]+1].c=nNum[3];
+			g[nNum[1]+1][nNum[0]+1].c=nNum[3];
+			g_edge[g_edgeCount].u=nNum[2];
+			g_edge[g_edgeCount].c=nNum[3];
+			g_edge[g_edgeCount].idBegin=nNum[0]+1;
+			g_edge[g_edgeCount].idEnd=nNum[1]+1;
+			g[nNum[0]+1][nNum[1]+1].idEdge=g_edgeCount;
+			g_edgeCount++;
+			g_edge[g_edgeCount].u=nNum[2];
+			g_edge[g_edgeCount].c=nNum[3];
+			g_edge[g_edgeCount].idBegin=nNum[1]+1;
+			g_edge[g_edgeCount].idEnd=nNum[0]+1;
+			g[nNum[1]+1][nNum[0]+1].idEdge=g_edgeCount;
+			g_edgeCount++;
+		}
 	}
 	for (int line=m+5;line<line_num;line++){
 		strTmp=topo[line];
@@ -98,12 +127,68 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 		v[nNum[1]+1].id=nNum[0]+1;//id+1, I think the d maybe [0
 		vCons[nNum[0]+1].vid=nNum[1]+1;
 	}
+	/*for (int i=0;i<n+1;i++){
+		int nTmp=0,nTmp2=0;
+		sort(v[i].edge.begin(),v[i].edge.end(),[i](int pos1,int pos2)->bool{
+			if (g[i][pos1].c<g[i][pos2].c){
+				return true;
+			}else
+				return false;
+		});
+		int nD=v[i].d;
+		for (int j=0;j<v[i].edge.size();j++){
+			nTmp+=g[i][v[i].edge[j]].u;
+			if (nD>=g[i][v[i].edge[j]].u){
+				nTmp2+=g[i][v[i].edge[j]].u*g[i][v[i].edge[j]].c;
+				nD-=g[i][v[i].edge[j]].u;
+			}else{
+				nTmp2+=nD*g[i][v[i].edge[j]].c;
+				nD=0;
+			}
+		}
+		if (nTmp<v[i].d)
+			cout<<i<<endl;
+		if (nTmp2>=cServer){
+			cout<<"GT cServer: "<<i<<endl;
+			/*sFixedServerPos.insert(i);
+			for (int j=0;j<v[i].edge.size();j++){
+				g[i][v[i].edge[j]].u=0;
+				g[v[i].edge[j]][i].u=0;
+				for (int k=0;k<v[v[i].edge[j]].edge.size();k++){
+					if (v[v[i].edge[j]].edge[k]==i){
+						v[v[i].edge[j]].edge.erase(v[v[i].edge[j]].edge.begin()+k);
+					}
+				}
+			}
+			v[i].edge.clear();
+		}
+	}*/
 	//make an initial of the networkSimplex
 	//v[0].d=INT_MAX;//may not use v0.d
 	for (int i=1;i<n+1;i++){
 		g[0][i].u=INT_MAX;//super point,>=5000*500
 		v[0].edge.push_back(i);
+		g_edge[g_edgeCount].u=INT_MAX;
+		g_edge[g_edgeCount].idBegin=0;
+		g_edge[g_edgeCount].idEnd=i;
+		g[0][i].idEdge=g_edgeCount;
+		g_edgeCount++;
 	}
+	v[0].next=1;
+	v[1].prec=0;
+	for (int i=1;i<n+1;i++){
+		if (v[i].id>0){//d maybe 0
+			g[0][i].x=v[i].d;//the left xij is all 0, and the initial feasible tree <0,1~n> is strong for they're all away from 0
+			g_edge[g_edgeCount-1-n+i].x=v[i].d;
+		}//initial x is 0, no need for else
+		v[i].parent=0;//all point's parent is 0 && v[0].depth=0
+		v[i].directToParent=false;//v[i].direction=false cannot be omitted!!!
+		v[i].depth=1;//v[0].depth=0, depth is from 0
+		v[i].next=i+1;//i's next dfs node is i+1 except vn.next
+		v[i+1].prec=i;
+	}
+	v[n].next=0;//!here is important
+	v[0].prec=n;
 	/*for (int i=0;i<n;i++){
 		for (int j=0;j<n;j++){
 			cout<<g[i][j].u<<" ";
@@ -115,13 +200,22 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	}*/
 	set<int> nServerPos,nGreedyServerPos;
 	int nMinCost=nd*cServer,nMinPos[MAX_CONSUME_NUM]={0},nMinPosCount=0;
-	/*for (int i=0;i<nMinPosCount;i++){
+	/*int nMinCost=0,nMinPos[MAX_CONSUME_NUM]={106, 131, 165, 185, 276, 305, 310, 390, 391, 401, 428, 575, 585, 631, 655, 740},nMinPosCount=16;
+	for (int i=0;i<nMinPosCount;i++){
 		if (nMinPos[i]>0){
 			nMinPos[i]++;
 		}
-	}*/
+	}
 	//branchAndBound(n,cServer,nServerPos);
-	for (int k=0;k<nd;k++){
+	nServerPos.clear();
+	nServerPos.insert(nMinPos,nMinPos+nMinPosCount);
+	int gmfCount=0;
+	while (clock()-g_tmStart<30*CLOCKS_PER_SEC){
+		networkSimplexAlg(n,cServer,nServerPos,g,v);
+		gmfCount++;
+	}
+	cout<<"Oh My god! "<<gmfCount<<endl;*/
+	/*for (int k=0;k<nd;k++){
 		int min2Cost=INT_MAX,min2Pos=0,minPos=0;
 		int nCostBefore=nMinCost;
 		for (int i=1;i<n+1;i++){
@@ -144,7 +238,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 					//cout<<"min2Pos History: "<<i<<" Cost: "<<min2Cost<<endl;
 				}
 			}
-			if (clock()-g_tmStart>45*CLOCKS_PER_SEC)
+			if (clock()-g_tmStart>40*CLOCKS_PER_SEC)
 				break;
 		}
 		if (minPos>0){
@@ -157,7 +251,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 			break;
 			//nGreedyServerPos.insert(min2Pos);
 		}
-		if (clock()-g_tmStart>45*CLOCKS_PER_SEC)
+		if (clock()-g_tmStart>40*CLOCKS_PER_SEC)
 			break;
 	}
 	/*nMinPosCount+=2;
@@ -189,14 +283,16 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	//GA-genetic algorithm
 	
 	srand((int)time(0));
-	int nPop;
+	int nPop,nType=1;
 	if (n<500)
 		nPop=500;
-	else
+	else{
 		nPop=200;
+		nType=0;
+	}
 	GenAlg genAlg(n,nPop,nd,cServer,nGreedyServerPos);//20~30 chromosomes
 	//genAlg.startGA(85);
-	genAlg.startPSO(85,0.9*RAND_MAX,0.5*RAND_MAX,0.5*RAND_MAX);
+	genAlg.startPSO(85,0.9*RAND_MAX,0.5*RAND_MAX,0.5*RAND_MAX,nType);
 	//genAlg.startPSO(85,1,2,2);
 	nMinCost=genAlg.getMinCost();
 	nServerPos=genAlg.getBestServerPos();
@@ -226,18 +322,23 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	if (nMinCost<nd*cServer){
 		/*nServerPos.clear();
 		nServerPos.insert(nMinPos,nMinPos+nMinPosCount);*/
-		networkSimplexAlg(n,cServer,nServerPos);
+		networkSimplexAlg(n,cServer,nServerPos,g,v);
 		int nTotalCost=0,nTotalNum=nMinPosCount;
 		/*nTotalNum=nServerPos.size();
-		while (!calcCost(cServer,n,nTotalCost,nTotalNum)){
-			processNetwork(n,nServerPos,cServer,nTotalCost,true);
+		while (!calcCost(cServer,n,nTotalCost,nTotalNum,g)){
+			processNetwork(n,nServerPos,cServer,nTotalCost,g,v,true);
 			nTotalNum=nServerPos.size();
-			networkSimplexAlg(n,cServer,nServerPos);
+			networkSimplexAlg(n,cServer,nServerPos,g,v);
 			nTotalCost=0;
 		}*/
-		processNetwork(n,nServerPos,cServer,nTotalCost,true);
-		calcCost(cServer,n,nTotalCost,nTotalNum);
-		networkSimplexAlg(n,cServer,nServerPos);
+		for (int i=0;i<n+1;i++){
+			for (int j=0;j<n+1;j++){
+				gTmp[i][j]=g[i][j];
+			}
+		}
+		processNetwork(n,nServerPos,cServer,nTotalCost,gTmp,v,true);
+		calcCost(cServer,n,nTotalCost,nTotalNum,gTmp);
+		networkSimplexAlg(n,cServer,nServerPos,g,v);
 
 		cout<<"Final nMinCost="<<nTotalCost<<" minPos=";
 		for (auto i=nServerPos.begin();i!=nServerPos.end();i++)
@@ -296,7 +397,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 		g_totalCost=nd*cServer;
 	}
 	cout<<"Total cost: "<<g_totalCost<<endl;
-	//cout<<g_count<<endl;
+	cout<<g_count<<endl<<"simplex num: "<<g_count2<<endl;
 	strTopo=strTopo;
 	cin.get();
 
@@ -310,34 +411,53 @@ void branchAndBound(int n,int cServer,set<int>& nServerPos){
 
 }
 
-void networkSimplexAlg(int n,int cServer,set<int>& pos){
+void networkSimplexAlg(int n,int cServer,set<int>& pos,Node g[][MAX_NODE_NUM+1],NodeVertex v[]){
 	int nTmp,nTmp2,nTmp3;
-	//g_count++;
+	g_count2++;
 	//make an initial strongly feasible tree or solution
-	for (int i=0;i<n+1;i++)
+	/*for (int i=1;i<n+1;i++){
 		for (int k=0;k<v[i].edge.size();k++){
 			g[i][v[i].edge[k]].x=0;
 		}
-	v[0].next=1;//may not use v0.d
+	}
+	for (int i=0;i<g_edgeCount-n;i++){
+		g_edge[i].x=0;
+	}
+	v[0].next=1;
+	v[1].prec=0;*/
 	for (int i=1;i<n+1;i++){
-		if (pos.find(i)!=pos.end())
+		if (pos.find(i)!=pos.end()){
 			g[0][i].c=0;
-		else
+			g_edge[g_edgeCount-1-n+i].c=0;
+		}else{
 			g[0][i].c=cServer;
-		if (v[i].id>0)//d maybe 0
+			g_edge[g_edgeCount-1-n+i].c=cServer;
+		}
+		/*if (v[i].id>0){//d maybe 0
 			g[0][i].x=v[i].d;//the left xij is all 0, and the initial feasible tree <0,1~n> is strong for they're all away from 0
-		else
+			g_edge[g_edgeCount-1-n+i].x=v[i].d;
+		}else{
 			g[0][i].x=0;
+			g_edge[g_edgeCount-1-n+i].x=0;
+		}
 		v[i].parent=0;//all point's parent is 0 && v[0].depth=0
 		v[i].directToParent=false;//v[i].direction=false cannot be omitted!!!
 		v[i].depth=1;//v[0].depth=0, depth is from 0
 		v[i].next=i+1;//i's next dfs node is i+1 except vn.next
+		v[i+1].prec=i;*/
 	}
-	v[n].next=0;//!here is important
-
+	/*v[n].next=0;//!here is important
+	v[0].prec=n;
 	//calculate π[i], let π0=0 or the potential of the root is 0
 	for (int i=1;i<n+1;i++){//cπij=cij-πi+πj=0;here 0/cServer-0+πi=0
 		v[i].pi=-g[0][i].c;
+	}*/
+	int d;
+	for (int i=v[0].next;i!=0;i=v[i].next){
+		if (v[i].parent==0){
+			d=-g_edge[g_edgeCount-1-n+i].c-v[i].pi;//or g[0][i]
+		}
+		v[i].pi+=d;
 	}
 	//find the maximum residual reduced cost(-cπij/cπij for L/U)
 	int max;
@@ -347,14 +467,13 @@ void networkSimplexAlg(int n,int cServer,set<int>& pos){
 			g[i][j].cpi=g[i][j].c-v[i].pi+v[j].pi;
 		}
 	}*/
-	unsigned char bMayWrong=0;//if cπij uses one πi1 then if x<0,πIDi>!=0 will be a wrong trial;0false 1true 2may be correct
 	do{
 		int p,q;
 		max=0;
-		for (int i=0;i<n+1;i++){
+		/*for (int i=0;i<n+1;i++){//maybe cache can not save it leads to its slow speed!!!
 			for (int k=0;k<v[i].edge.size();k++){
 				int j=v[i].edge[k];
-				if (!(!v[j].directToParent&&v[j].parent==i||v[i].directToParent&&v[i].parent==j)){//if the arc exists && it !∈ T;i!=j belongs to .u>0
+				//if (!(!v[j].directToParent&&v[j].parent==i||v[i].directToParent&&v[i].parent==j)){//if the arc exists && it !∈ T;i!=j belongs to .u>0
 					g[i][j].cpi=g[i][j].c-v[i].pi+v[j].pi;
 					if (!g[i][j].x){//belongs to L
 						if (g[i][j].cpi<-max){
@@ -367,6 +486,24 @@ void networkSimplexAlg(int n,int cServer,set<int>& pos){
 							p=i;q=j;
 						}
 					}
+				//}//if don't use this if, the speed will be boosted
+			}
+		}*/
+		for (int i=0;i<g_edgeCount;i++){
+			int ni=g_edge[i].idBegin;
+			int nj=g_edge[i].idEnd;
+			int nCpiij=g_edge[i].c-v[ni].pi+v[nj].pi;
+			if (g_edge[i].x==0){
+				if (nCpiij<-max){
+					max=-nCpiij;
+					p=ni;q=nj;
+					//break;
+				}
+			}else{
+				if (nCpiij>max){
+					max=nCpiij;
+					p=ni;q=nj;
+					//break;
 				}
 			}
 		}
@@ -456,69 +593,87 @@ void networkSimplexAlg(int n,int cServer,set<int>& pos){
 						if (v[topP].depth>v[topQ].depth){//go from P to top intersection
 							if (v[topP].directToParent){//∈W-
 								g[topP][v[topP].parent].x-=min;
+								g_edge[g[topP][v[topP].parent].idEdge].x-=min;
 							}else{//∈W+
 								g[v[topP].parent][topP].x+=min;
+								g_edge[g[v[topP].parent][topP].idEdge].x+=min;
 							}
 							topP=v[topP].parent;
 						}else if (v[topP].depth<v[topQ].depth){
 							if (v[topQ].directToParent){//∈W+
 								g[topQ][v[topQ].parent].x+=min;
+								g_edge[g[topQ][v[topQ].parent].idEdge].x+=min;
 							}else{//∈W-
 								g[v[topQ].parent][topQ].x-=min;
+								g_edge[g[v[topQ].parent][topQ].idEdge].x-=min;
 							}
 							topQ=v[topQ].parent;
 						}else{//v[topP].depth==v[topQ].depth
 							//topP up to its parent
 							if (v[topP].directToParent){//∈W-
 								g[topP][v[topP].parent].x-=min;
+								g_edge[g[topP][v[topP].parent].idEdge].x-=min;
 							}else{//∈W+
 								g[v[topP].parent][topP].x+=min;
+								g_edge[g[v[topP].parent][topP].idEdge].x+=min;
 							}
 							topP=v[topP].parent;
 							//topQ up to its parent
 							if (v[topQ].directToParent){//∈W+
 								g[topQ][v[topQ].parent].x+=min;
+								g_edge[g[topQ][v[topQ].parent].idEdge].x+=min;
 							}else{//∈W-
 								g[v[topQ].parent][topQ].x-=min;
+								g_edge[g[v[topQ].parent][topQ].idEdge].x-=min;
 							}
 							topQ=v[topQ].parent;
 						}
 					}
 					g[p][q].x+=min;//update xpq
+					g_edge[g[p][q].idEdge].x+=min;//update xpq
 				}else{//U,W+ is <q,p>
 					while (topP!=topQ){
 						if (v[topP].depth>v[topQ].depth){
 							if (v[topP].directToParent){//∈W+
 								g[topP][v[topP].parent].x+=min;
+								g_edge[g[topP][v[topP].parent].idEdge].x+=min;
 							}else{//∈W-
 								g[v[topP].parent][topP].x-=min;
+								g_edge[g[v[topP].parent][topP].idEdge].x-=min;
 							}
 							topP=v[topP].parent;
 						}else if (v[topP].depth<v[topQ].depth){//go from Q to top intersection
 							if (v[topQ].directToParent){//∈W-
 								g[topQ][v[topQ].parent].x-=min;
+								g_edge[g[topQ][v[topQ].parent].idEdge].x-=min;
 							}else{//∈W+
 								g[v[topQ].parent][topQ].x+=min;
+								g_edge[g[v[topQ].parent][topQ].idEdge].x+=min;
 							}
 							topQ=v[topQ].parent;
 						}else{//v[topP].depth==v[topQ].depth
 							//topP up to its parent
 							if (v[topP].directToParent){//∈W+
 								g[topP][v[topP].parent].x+=min;
+								g_edge[g[topP][v[topP].parent].idEdge].x+=min;
 							}else{//∈W-
 								g[v[topP].parent][topP].x-=min;
+								g_edge[g[v[topP].parent][topP].idEdge].x-=min;
 							}
 							topP=v[topP].parent;
 							//topQ up to its parent
 							if (v[topQ].directToParent){//∈W-
 								g[topQ][v[topQ].parent].x-=min;
+								g_edge[g[topQ][v[topQ].parent].idEdge].x-=min;
 							}else{//∈W+
 								g[v[topQ].parent][topQ].x+=min;
+								g_edge[g[v[topQ].parent][topQ].idEdge].x+=min;
 							}
 							topQ=v[topQ].parent;
 						}
 					}
 					g[p][q].x-=min;//update xpq
+					g_edge[g[p][q].idEdge].x-=min;//update xpq
 					bXpqL=false;//update bXpqL for later updating πi
 				}
 			}
@@ -562,6 +717,8 @@ void networkSimplexAlg(int n,int cServer,set<int>& pos){
 				int pSearch=nPQH;//pSearch start from nPQH
 				nTmp=v[pSearch].next;//save it for later T2 last dps node points to it;but it may be nL if nH==nTopP
 				v[pSearch].next=nPQL;//update next
+				int nTmpNLPrec=v[nPQL].prec;
+				v[nPQL].prec=pSearch;
 				nTmp2=v[nPQL].parent;//save it for later use,first enter&&go out processed point
 				v[nPQL].parent=nPQH;//upadate parent
 				int nTmpDirect=v[nPQL].directToParent;//save for later nTmp4.direct use!!!
@@ -580,6 +737,8 @@ void networkSimplexAlg(int n,int cServer,set<int>& pos){
 					}
 					nTmp3=v[pSearch].next;//save it for later use;can use temporary variables
 					v[pSearch].next=nTmp4;//update next
+					nTmpNLPrec=v[nTmp4].prec;//when nTmp4 is nL, its prec is reserved
+					v[nTmp4].prec=pSearch;
 					int nTmp5=v[nTmp4].parent;//save it for later shift
 					v[nTmp4].parent=nTmp2;//upadate parent;nTmp2 is released
 					int nTmpDirect2=v[nTmp4].directToParent;//save for later shift
@@ -593,39 +752,34 @@ void networkSimplexAlg(int n,int cServer,set<int>& pos){
 						pSearch=v[pSearch].next;
 					}
 					v[pSearch].next=nTmp3;//nTmp3 is released
+					v[nTmp3].prec=pSearch;
 					//shift nTmp4,nTmp5->nTmp2,nTmp4 then nTmp5 is released
 					nTmp2=nTmp4;nTmp4=nTmp5;
 				}
 				nTmp3=v[pSearch].next;//save it for final update next
-				if (nTmp!=nL){
+				//int nT2Final=pSearch;
+				if (nTmp!=nL){//if nTmp is nL, it may be nonexistent
 					v[pSearch].next=nTmp;//next is nTmp
+					v[nTmp].prec=pSearch;
 					//only old tree from the root nL goes out
-					if (nH==nPQH) 
-						pSearch=nTmp;
-					else
-						pSearch=nH;
-					while (v[pSearch].next!=nL){//now <nH,nL> is nonexistent
-						if (v[pSearch].next==nPQH)//if encounter the <nPQH,nPQL>+T2 then jump it
-							pSearch=nTmp;
-						else
+					/*if (nH==nPQH){
+						//pSearch=nTmp is wrong for it may loop the tree again!
+					}else
+						pSearch=nH;*/
+					if (nTmpNLPrec!=nPQH)//use nLPrec to boost up!
+						pSearch=nTmpNLPrec;
+					/*while (v[pSearch].next!=nL){//now <nH,nL> is nonexistent; this while may waste a lot of time
+						if (v[pSearch].next==nPQH){//if encounter the <nPQH,nPQL>+T2 then jump it
+							pSearch=nT2Final;
+						}else
 							pSearch=v[pSearch].next;
-					}
+					}*/
 					v[pSearch].next=nTmp3;//nTmp3 is released
+					v[nTmp3].prec=pSearch;
 				}else{//if (nTmp==nL) then topP==nH! if opposite the condition it's not always true!
 					//v[pSearch].next=nTmp3;//nTmp3 is released && don't need to update anything including v[nH].next....next=nL for it has already been updated to nPQL
 					nTmp=nTmp3;//correct the T2 final node's pointing place
 				}
-				/*int pCheck=0,num=1;
-				while (v[pCheck].next!=0){
-					pCheck=v[pCheck].next;
-					num++;
-				}
-				if (num!=n+1){
-					cout<<"ErrorNum!";
-				}else{
-					cout<<"NumRight "<<g_count<<endl;
-				}*/
-				//g_count++;
 				//update tree depth&&πi
 				pSearch=nPQL;
 				v[pSearch].depth=v[v[pSearch].parent].depth+1;
@@ -691,7 +845,7 @@ void findOutgoing(int& k,int& l,bool& outPTop,bool bResult,
 		cout<<"ErrorMin";*/
 }
 
-bool calcCost(int cServer,int n,int& totalCost,int& totalNum,bool bTest){
+bool calcCost(int cServer,int n,int& totalCost,int& totalNum,Node g[][MAX_NODE_NUM+1],bool bTest){
 	int tmpNum=0;
 	for (int i=1;i<n+1;i++){
 		if (g[0][i].x>0){
@@ -713,9 +867,11 @@ bool calcCost(int cServer,int n,int& totalCost,int& totalNum,bool bTest){
 	}
 }
 
-void processNetwork(int n,set<int>& pos,int cServer,int& totalCost,bool bMakeRoute,bool bBug){
+void processNetwork(int n,set<int>& pos,int cServer,int& totalCost,Node g[][MAX_NODE_NUM+1],NodeVertex v[],
+					bool bMakeRoute,bool bBug){
 	typedef pair<int,int> Pair;
 	map<int,int> mapFlowID;
+	if (bBug)
 	for (int i=1;i<n+1;i++){
 		if (v[i].d>0&&pos.find(i)==pos.end()){
 			if (g[0][i].x>0&&g[0][i].x<v[i].d){
@@ -723,7 +879,7 @@ void processNetwork(int n,set<int>& pos,int cServer,int& totalCost,bool bMakeRou
 				g[0][i].x=v[i].d;
 				do{
 					nFlow=nFlowLeft;
-					deleteFromNet(i,nFlow,n,pos);
+					deleteFromNet(i,nFlow,n,pos,g);
 					nFlowLeft-=nFlow;
 				}while(nFlowLeft!=0);
 			}
@@ -732,7 +888,7 @@ void processNetwork(int n,set<int>& pos,int cServer,int& totalCost,bool bMakeRou
 				mapFlowID.clear();
 				do{
 					nFlow=nFlowLeft;
-					deleteAndCalcFromNet(i,nFlow,n,pos,nFlowCost,nSrcID);
+					deleteAndCalcFromNet(i,nFlow,n,pos,nFlowCost,nSrcID,g);
 					nFlowLeft-=nFlow;
 					auto tmpIter=mapFlowID.find(nSrcID);
 					if (tmpIter==mapFlowID.end())
@@ -760,7 +916,7 @@ void processNetwork(int n,set<int>& pos,int cServer,int& totalCost,bool bMakeRou
 		}
 	}
 }
-void deleteFromNet(int j,int& flow,int n,set<int>& pos){
+void deleteFromNet(int j,int& flow,int n,set<int>& pos,Node g[][MAX_NODE_NUM+1]){
 	for (int i=1;i<n+1;i++){
 		if (g[i][j].x>0){
 			if (flow>g[i][j].x)
@@ -768,14 +924,14 @@ void deleteFromNet(int j,int& flow,int n,set<int>& pos){
 			if (pos.find(i)!=pos.end()){
 				g[0][i].x-=flow;
 			}else{
-				deleteFromNet(i,flow,n,pos);
+				deleteFromNet(i,flow,n,pos,g);
 			}
 			g[i][j].x-=flow;
 			break;
 		}
 	}
 }
-void deleteAndCalcFromNet(int j,int& flow,int n,set<int>& pos,int& flowCost,int& srcID){
+void deleteAndCalcFromNet(int j,int& flow,int n,set<int>& pos,int& flowCost,int& srcID,Node g[][MAX_NODE_NUM+1]){
 	for (int i=1;i<n+1;i++){
 		if (g[i][j].x>0){
 			if (flow>g[i][j].x)
@@ -784,7 +940,7 @@ void deleteAndCalcFromNet(int j,int& flow,int n,set<int>& pos,int& flowCost,int&
 				//g[0][i].x-=flow;
 				srcID=i;
 			}else{
-				deleteAndCalcFromNet(i,flow,n,pos,flowCost,srcID);
+				deleteAndCalcFromNet(i,flow,n,pos,flowCost,srcID,g);
 			}
 			g[i][j].x-=flow;
 			flowCost+=g[i][j].c*flow;
@@ -843,48 +999,49 @@ GenAlg::GenAlg(int bitSize,int popSize,int nd,int cServer,set<int> greedyPos):m_
 	m_cServer(cServer),m_maxFit(nd*cServer),
 	m_conCMax(10){//?
 	m_popSize=0;
-	int nSumD=bitSize;
+	/*int nSumD=bitSize;
 	for (int i=1;i<nd+1;i++){
 		nSumD+=v[vCons[i].vid].d;
 	}
-	cout<<nSumD<<endl;
-	while (m_popSize<popSize-1){
+	cout<<nSumD<<endl;*/
+	while (m_popSize<popSize){
 		set<int> setTmp;
-		int k=rand();//*nSumD
+		/*int k=rand();//*nSumD
 		for (int i=1;i<bitSize+1;i++){
 			//if (v[i].id>0){
 			//	if (rand()*(v[i].d+1)>=k)
 			//		setTmp.insert(i);
 			if (rand()>=k)
 				setTmp.insert(i);
-			/*if (greedyPos.find(i)!=greedyPos.end())
-				if (rand()>=k)
-					setTmp.insert(i);*/
-		}
-		/*for (int i=1;i<rand()%(bitSize+1)+1;i++){
-			setTmp.insert(rand()%bitSize+1);
+			//if (greedyPos.find(i)!=greedyPos.end())
+			//	if (rand()>=k)
+			//		setTmp.insert(i);
 		}*/
+		for (int i=1;i<rand()%(bitSize+1)+1;i++){
+			setTmp.insert(rand()%bitSize+1);
+		}
 		/*for (int i=1;i<rand()%(nd+1)+1;i++){//rand()*nd/RAND_MAX+1
 			setTmp.insert(vCons[rand()%nd+1].vid);
 		}*/
+		setTmp.insert(sFixedServerPos.begin(),sFixedServerPos.end());
 		Genome tmpGenome(setTmp);
 		m_pop.push_back(tmpGenome);
 		m_popSize++;
 		//tmpGenome.print();
 	}
-	m_pop.push_back(Genome(greedyPos));
-	m_popSize++;
+	//m_pop.push_back(Genome(greedyPos));
+	//m_popSize++;
 }
 void GenAlg::calcFit(int timeS){
 	m_totalFit=0;
 	for (int i=0;i<m_popSize;i++){
 		set<int> setTmp=m_pop[i].decodeToSet();
-		networkSimplexAlg(m_chromoBitSize,m_cServer,setTmp);
+		networkSimplexAlg(m_chromoBitSize,m_cServer,setTmp,g,v);
 		int nTotalCost=0,nTotalNum=0;
-		processNetwork(m_chromoBitSize,setTmp,m_cServer,nTotalCost,true);
+		processNetwork(m_chromoBitSize,setTmp,m_cServer,nTotalCost,g,v,true);
 		//networkSimplexAlg(m_chromoBitSize,m_cServer,setTmp);
 		//nTotalCost=0;nTotalNum=setTmp.size();
-		calcCost(m_cServer,m_chromoBitSize,nTotalCost,nTotalNum);//,false);
+		calcCost(m_cServer,m_chromoBitSize,nTotalCost,nTotalNum,g);//,false);
 		if (nTotalCost<m_maxFit){
 			m_pop[i]=Genome(setTmp,m_maxFit-nTotalCost);
 			//m_pop[i].m_fitness=m_maxFit-nTotalCost;
@@ -993,7 +1150,7 @@ void GenAlg::startGA(int timeS){
 		}
 	}
 }
-void GenAlg::startPSO(int timeS,int w,int c1,int c2){
+void GenAlg::startPSO(int timeS,int w,int c1,int c2,int type){
 	m_convergCount=0;
 	/*for (int i=0;i<m_popSize;i++){
 		if (m_pop[i].m_genome.size()<m_chromoBitSize/Genome::m_intBitNS+1)
@@ -1015,7 +1172,7 @@ void GenAlg::startPSO(int timeS,int w,int c1,int c2){
 	while (m_convergCount<m_conCMax){
 		m_convergCount++;
 		cout<<m_convergCount<<endl;
-		calcPGBest(timeS);
+		calcPGBest(timeS,type);
 		if (clock()-g_tmStart>=timeS*CLOCKS_PER_SEC)
 			break;
 		int i=0;
@@ -1080,15 +1237,30 @@ void GenAlg::startPSO(int timeS,int w,int c1,int c2){
 		}*/
 	}
 }
-void GenAlg::calcPGBest(int timeS){
+void GenAlg::calcPGBest(int timeS,int type){
 	for (int i=0;i<m_popSize;i++){
 		set<int> setTmp=m_pop[i].decodeToSet();
-		networkSimplexAlg(m_chromoBitSize,m_cServer,setTmp);
+		int nTmTmp=clock();
+		networkSimplexAlg(m_chromoBitSize,m_cServer,setTmp,g,v);
 		int nTotalCost=0,nTotalNum=0;
-		processNetwork(m_chromoBitSize,setTmp,m_cServer,nTotalCost,true);
-		//networkSimplexAlg(m_chromoBitSize,m_cServer,setTmp);
-		//nTotalCost=0;nTotalNum=setTmp.size();
-		calcCost(m_cServer,m_chromoBitSize,nTotalCost,nTotalNum);//,false);
+		if (type==1){
+			for (int i=0;i<m_chromoBitSize+1;i++){
+				for (int j=0;j<m_chromoBitSize+1;j++){
+					gTmp[i][j]=g[i][j];
+				}
+			}
+			processNetwork(m_chromoBitSize,setTmp,m_cServer,nTotalCost,gTmp,v,true);
+			//networkSimplexAlg(m_chromoBitSize,m_cServer,setTmp,g,v);
+			g_count+=clock()-nTmTmp;
+			//nTotalCost=0;nTotalNum=setTmp.size();
+			calcCost(m_cServer,m_chromoBitSize,nTotalCost,nTotalNum,gTmp);//false
+		}else{
+			processNetwork(m_chromoBitSize,setTmp,m_cServer,nTotalCost,g,v,true,false);
+			networkSimplexAlg(m_chromoBitSize,m_cServer,setTmp,g,v);
+			g_count+=clock()-nTmTmp;
+			nTotalCost=0;nTotalNum=setTmp.size();
+			calcCost(m_cServer,m_chromoBitSize,nTotalCost,nTotalNum,g,false);
+		}
 		if (nTotalCost<m_maxFit){
 			m_pop[i]=Genome(setTmp,m_maxFit-nTotalCost);
 			//m_pop[i].m_fitness=m_maxFit-nTotalCost;

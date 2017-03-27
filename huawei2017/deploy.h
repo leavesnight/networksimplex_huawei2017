@@ -68,8 +68,8 @@ public:
 	void mutate(vector<int>& chromo);
 	void startGA(int timeS);//max run time(S)
 
-	void startPSO(int timeS,int w,int c1,int c2);
-	void calcPGBest(int timeS);
+	void startPSO(int timeS,int w,int c1,int c2,int type=0);
+	void calcPGBest(int timeS,int type=0);
 
 	int getMinCost(){
 		return m_maxFit-m_bestFit;
