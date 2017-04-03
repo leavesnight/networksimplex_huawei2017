@@ -8,11 +8,12 @@
 #include <algorithm>
 #include <random>
 #include <functional>
+#include <bitset>
 //#include <iterator>
 using namespace std;
 
 const int MAX_NODE_NUM=1000,MAX_LINES_NUM=50000,MAX_CONSUME_NUM=500;
-int g_numVert,g_numDem,g_costServ;
+int g_numVert,g_numDem,g_costServ,g_totalDem;
 int g_count,g_leftCus,g_totalCost,g_count2;
 clock_t g_tmStart=clock();
 
@@ -42,16 +43,30 @@ struct NodeConsumer{
 	int vid;//record the id in the network,+1
 };
 int g[MAX_NODE_NUM+1][MAX_NODE_NUM+1];//0 is the super point/ultimate source&& just save the edge id
-NodeEdge g_edge[MAX_NODE_NUM*(40+1)+1];//max 20 edges connecting to one point, and add 0i;0 means the empty one
-int g_edgeCount=1;
-NodeEdge g_edgeTmp[MAX_NODE_NUM*(40+1)+1];
+NodeEdge g_edge[MAX_NODE_NUM*(40+1)];//max 20 edges connecting to one point, and add 0i;start from 0 is easy to find the opposite edge
+int g_edgeCount=0;
+NodeEdge g_edgeTmp[MAX_NODE_NUM*(40+1)];
 NodeVertex v[MAX_NODE_NUM+1];
 NodeConsumer vCons[MAX_CONSUME_NUM+1];
 set<int> sFixedServerPos;
+int g_srcEdge[MAX_NODE_NUM+1],g_snkEdge[MAX_NODE_NUM+1];
+struct NodeEdgeUnD{
+	int cpi;//modified Cπij,if x==0 it will be -cπij
+	int idBegin;
+	int idEnd;
+	int idHeap;
+};
+NodeEdgeUnD g_edgeUnD[MAX_NODE_NUM*(20+1)];//use this to boost up the searching cpi speed
+int g_edgeUnDCount=0;
+//ZkwHeap<int,less<int>> g_zkwtree(0);//use big heap
+vector<NodeHeap<int>> g_heap;//use big heap
+const bool g_bUseHeap=0;
 
-
+void netSAinit(NodeEdge edge[]);
 void networkSimplexAlg(set<int>& pos,NodeEdge edge[]);
-void findOutgoing(int& k,int& l,bool& outPTop,bool bResult,
+inline void changeEdgeUnD(int i,NodeEdge g_edge[]);
+inline void zkwtreeModify(int i);
+inline void findOutgoing(int& k,int& l,bool& outPTop,bool bResult,
 				  int& min,int p,int q,bool bEqual=false,bool directPlus=false);
 void processNetwork(set<int>& pos,int& totalCost,NodeEdge edge[],bool bMakeRoute=false,int bBug=2);
 void deleteFromNet(int j,int& flow,set<int>& pos,NodeEdge edge[]);
@@ -60,6 +75,92 @@ bool calcCost(int& totalCost,int& totalNum,NodeEdge edge[],bool bTest=true);
 void printPath(int i,int& flow,ostream& sout);
 void printTree();
 void xjbs();
+
+struct Flow{
+	//NodeVertex* pbg;
+	//vector<NodeEdge> eg;
+	int flow,cost;
+	bitset<1010> servers;
+	bitset<1010> modifiedservers;
+	int val(){
+		//if (flow!=g_totalDem)
+		//	return ~0u>>1;
+		return cost;
+	}
+	Flow():flow(0),cost(~0u>>1){}
+	Flow(bitset<1010> svrs):flow(0),cost(0),servers(svrs){
+		set<int> setTmp;
+		for (int i=0;i<g_numVert;i++){
+			if (servers[i])
+				setTmp.insert(i+1);
+		}
+		int nTmTmp=clock();
+		//netSAinit(g_edge);
+		networkSimplexAlg(setTmp,g_edge);
+		int type=3,nTotalNum=0;//servers.count();
+		int& nTotalCost=cost;
+		if (type==1){
+			for (int i=0;i<g_edgeCount;++i){
+				g_edgeTmp[i].x=g_edge[i].x;
+			}
+			processNetwork(setTmp,nTotalCost,g_edgeTmp,true);
+			//networkSimplexAlg(m_chromoBitSize,m_cServer,setTmp,g,v);
+			g_count+=clock()-nTmTmp;
+			//nTotalCost=0;nTotalNum=setTmp.size();
+			calcCost(nTotalCost,nTotalNum,g_edgeTmp);//false
+		}else if (type==0){
+			processNetwork(setTmp,nTotalCost,g_edge,true,0);
+			networkSimplexAlg(setTmp,g_edge);
+			g_count+=clock()-nTmTmp;
+			nTotalCost=0;nTotalNum=setTmp.size();
+			calcCost(nTotalCost,nTotalNum,g_edge,false);
+		}else if (type==2){
+			for (int i=0;i<g_edgeCount;++i){
+				g_edgeTmp[i].x=g_edge[i].x;
+			}
+			processNetwork(setTmp,nTotalCost,g_edgeTmp,true,1);
+			//networkSimplexAlg(m_chromoBitSize,m_cServer,setTmp,g,v);
+			g_count+=clock()-nTmTmp;
+			//nTotalCost=0;nTotalNum=setTmp.size();
+			calcCost(nTotalCost,nTotalNum,g_edgeTmp,false);
+		}else{
+			for (int k=1;k<g_numDem+1;k++){
+				int i=vCons[k].vid;
+				if (!servers[i-1]){//v[i].d>0
+					int iMap=g_srcEdge[i];
+					if (g_edge[iMap].x>0){
+						nTotalCost=~0u>>1;
+						break;
+					}
+				}
+			}
+			if (nTotalCost!=~0u>>1){
+				//calcCost(nTotalCost,nTotalNum,g_edge,false);
+				nTotalCost+=servers.count()*g_costServ;
+				for (int i=0;i<g_edgeCount-g_numVert;++i){//0 is empty;*2-1
+					if (g_edge[i].x>0){
+						nTotalCost+=g_edge[i].x*g_edge[i].c;
+					}
+				}
+			}
+		}
+		for (int i=1;i<g_numVert+1;i++){
+			if (setTmp.find(i)!=setTmp.end()){
+				modifiedservers[i-1]=1;
+			}
+		}
+	}
+};
+struct dude{
+	Flow* flow;
+	bool operator<(const dude& d)const{
+		return flow->val()<d.flow->val();
+	}
+	bool operator==(const dude& d)const{
+		return flow->servers==d.flow->servers;
+	}
+};
+Flow& randomwalk();
 
 //你要完成的功能总入口
 void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
@@ -109,6 +210,9 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 			v[nNum[1]+1].idEdge.push_back(g_edgeCount);
 			v[nNum[0]+1].idEdgeFrom.push_back(g_edgeCount);
 			g_edgeCount++;
+			g_edgeUnD[g_edgeUnDCount].idBegin=nNum[0]+1;
+			g_edgeUnD[g_edgeUnDCount].idEnd=nNum[1]+1;
+			++g_edgeUnDCount;
 		}
 	}
 	for (int line=m+5;line<line_num;line++){
@@ -121,8 +225,9 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 		v[nNum[1]+1].d=nNum[2];//it starts from point 0, but we let it from 1, the left one is all 0 except v0.d
 		v[nNum[1]+1].id=nNum[0]+1;//id+1, I think the d maybe [0
 		vCons[nNum[0]+1].vid=nNum[1]+1;
+		g_totalDem+=nNum[2];
 	}
-	/*for (int i=0;i<g_numVert+1;i++){
+	/*for (int i=0;i<g_numVert+1;++i){
 		int nTmp=0,nTmp2=0;
 		sort(v[i].edge.begin(),v[i].edge.end(),[i](int pos1,int pos2)->bool{
 			if (g[i][pos1].c<g[i][pos2].c){
@@ -159,23 +264,48 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 		}
 	}*/
 	//make an initial of the networkSimplex
-	//v[0].d=INT_MAX;//may not use v0.d
-	for (int i=1;i<g_numVert+1;i++){
+	//v[0].d=INT_MAX;//sink will use v0.d
+	for (int i=1;i<g_numVert+1;++i){
 		g_edge[g_edgeCount].u=INT_MAX;//super point,>=5000*500
 		g_edge[g_edgeCount].idBegin=0;
 		g_edge[g_edgeCount].idEnd=i;
 		g[0][i]=g_edgeCount;
+		g_srcEdge[i]=g_edgeCount;
 		v[0].idEdge.push_back(g_edgeCount);
 		v[i].idEdgeFrom.push_back(g_edgeCount);
 		g_edgeCount++;
+		//idBegin=0;//always 0
+		g_edgeUnD[g_edgeUnDCount].idEnd=i;//always i
+		++g_edgeUnDCount;
 	}
-	for (int i=1;i<g_edgeCount;i++)
+	/*for (int k=0;k<g_numDem+1;++k){
+		int i=vCons[k].vid;
+		g_edge[g_edgeCount].u=v[i].d;//add super sink
+		g_edge[g_edgeCount].idBegin=i;
+		g_edge[g_edgeCount].idEnd=g_numVert+1;
+		g[i][g_numVert+1]=g_edgeCount;
+		g_snkEdge[i]=g_edgeCount;
+		v[i].idEdge.push_back(g_edgeCount);
+		v[g_numVert+1].idEdgeFrom.push_back(g_edgeCount);
+		g_edgeCount++;
+	}
+	g_edge[g_snkEdge[0]].c=g_costServ;*/
+	//if (g_bUseHeap) g_zkwtree.initSize(g_edgeCount-1);
+	//if (g_bUseHeap) g_zkwtree.initSize(g_edgeUnDCount);
+	if (g_bUseHeap){
+		g_heap.resize(g_edgeUnDCount);//heap should start from 1
+		for (int i=0;i<g_edgeUnDCount;i++){
+			g_heap[i].mk=i;
+			g_edgeUnD[i].idHeap=i;
+		}
+	}
+	for (int i=0;i<g_edgeCount;++i)//repaired start from 0
 		g_edgeTmp[i]=g_edge[i];
 	v[0].next=1;
 	v[1].prec=0;
-	for (int i=1;i<g_numVert+1;i++){
+	for (int i=1;i<g_numVert+1;++i){
 		if (v[i].id>0){//d maybe 0
-			g_edge[g_edgeCount-1-g_numVert+i].x=v[i].d;//the left xij is all 0, and the initial feasible tree <0,1~g_numVert> is strong for they're all away from 0
+			g_edge[g_srcEdge[i]].x=v[i].d;//the left xij is all 0, and the initial feasible tree <0,1~g_numVert> is strong for they're all away from 0
 		}//initial x is 0, no need for else
 		v[i].parent=0;//all point's parent is 0 && v[0].depth=0
 		v[i].directToParent=false;//v[i].direction=false cannot be omitted!!!
@@ -185,36 +315,29 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	}
 	v[g_numVert].next=0;//!here is important
 	v[0].prec=g_numVert;
-	/*for (int i=0;i<g_numVert;i++){
+	/*for (int i=0;i<g_numVert;++i){
 		for (int j=0;j<g_numVert;j++){
 			cout<<g[i][j].u<<" ";
 		}
 		cout<<endl;
 	}
-	for (int i=0;i<g_numVert;i++){
+	for (int i=0;i<g_numVert;++i){
 		cout<<v[i].d<<" ";
 	}*/
 	set<int> nServerPos,nGreedyServerPos;
 	int nMinCost=g_numDem*g_costServ,nMinPos[MAX_CONSUME_NUM]={0},nMinPosCount=0;
-	/*int nMinCost=0,nMinPos[MAX_CONSUME_NUM]={55,74,75,165, 276, 305, 310, 390, 404 ,428, 520, 616,710,740},nMinPosCount=14;
-	for (int i=0;i<nMinPosCount;i++){
+	/*int nMinCost=0,nMinPos[MAX_CONSUME_NUM]={7,13,15,22,37,38,43},nMinPosCount=7;
+	for (int i=0;i<nMinPosCount;++i){
 		if (nMinPos[i]>0){
 			nMinPos[i]++;
 		}
-	}
+	}*/
 	//branchAndBound(g_numVert,g_costServ,nServerPos);
-	nServerPos.clear();
-	nServerPos.insert(nMinPos,nMinPos+nMinPosCount);
-	int gmfCount=0;
-	while (clock()-g_tmStart<30*CLOCKS_PER_SEC){
-		networkSimplexAlg(g_numVert,g_costServ,nServerPos,g,v);
-		gmfCount++;
-	}
-	cout<<"Oh My god! "<<gmfCount<<endl;*/
-	/*for (int k=0;k<g_numDem;k++){
+	if (g_numVert<200)
+	for (int k=0;k<g_numDem;k++){
 		int min2Cost=INT_MAX,min2Pos=0,minPos=0;
 		int nCostBefore=nMinCost;
-		for (int i=1;i<g_numVert+1;i++){
+		for (int i=1;i<g_numVert+1;++i){
 			if (nGreedyServerPos.find(i)==nGreedyServerPos.end()){
 				nServerPos.clear();
 				nServerPos.insert(nGreedyServerPos.begin(),nGreedyServerPos.end());
@@ -223,7 +346,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 				int nTotalCost=0,nTotalNum=0;
 				int nType=1;
 				if (nType==1){
-					for (int i=1;i<g_edgeCount;i++){
+					for (int i=0;i<g_edgeCount;++i){
 						g_edgeTmp[i].x=g_edge[i].x;
 					}
 					processNetwork(nServerPos,nTotalCost,g_edgeTmp,false);//1
@@ -236,7 +359,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 					nTotalCost=0;nTotalNum=nServerPos.size();
 					calcCost(nTotalCost,nTotalNum,g_edge,false);
 				}else{
-					for (int i=1;i<g_edgeCount;i++){
+					for (int i=0;i<g_edgeCount;++i){
 						g_edgeTmp[i].x=g_edge[i].x;
 					}
 					processNetwork(nServerPos,nTotalCost,g_edgeTmp,false,1);
@@ -261,7 +384,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 			nGreedyServerPos.insert(minPos);
 			nMinPos[nMinPosCount]=minPos;
 			nMinPosCount++;
-			cout<<nCostBefore<<" after greedy: "<<nMinCost<<endl;
+			//cout<<nCostBefore<<" after greedy: "<<nMinCost<<endl;
 			//if (nCostBefore-nMinCost<g_costServ) break;
 		}else{
 			break;
@@ -271,7 +394,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 			break;
 	}
 	/*nMinPosCount+=2;
-	for (int i=1;i<g_numVert+1;i++){
+	for (int i=1;i<g_numVert+1;++i){
 		for (int i2=1;i2<g_numVert+1;i2++){
 			if (i2!=i&&(nGreedyServerPos.find(i)==nGreedyServerPos.end()||
 				nGreedyServerPos.find(i2)==nGreedyServerPos.end())){
@@ -299,22 +422,48 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	//GA-genetic algorithm
 	
 	srand((int)time(0));
-	int nPop,nType=1;
-	if (g_numVert<500)
-		nPop=500;
-	else{
-		nPop=200;
-		//nType=0;
+	//srand(0);
+	int nTry=0;
+	if (g_numVert<2000){
+	}else{
+		Flow& best_flow=randomwalk();
+		nMinCost=best_flow.cost;
+		for (int i=0;i<g_numVert;i++){
+			if (best_flow.modifiedservers[i])
+				nServerPos.insert(i+1);
+		}
+		delete &best_flow;
 	}
-	GenAlg genAlg(g_numVert,nPop,g_numDem,g_costServ,nGreedyServerPos);//20~30 chromosomes
-	//genAlg.startGA(85);
-	genAlg.startPSO(89,0.9*RAND_MAX,0.5*RAND_MAX,0.5*RAND_MAX,nType);
-	//genAlg.startPSO(85,1,2,2);
-	nMinCost=genAlg.getMinCost();
-	nServerPos=genAlg.getBestServerPos();
+	if (g_numVert<2000){
+		if (g_numVert>=200){
+		//	nGreedyServerPos=nServerPos;
+		}
+		int nPop,nType=1;
+		if (g_numVert<500)
+			nPop=200;//500;
+		else{
+			nPop=200;//200;
+			//nType=0;
+		}
+		int nMCTmp,nMCCount=0;
+		do{
+		++nMCCount;
+		GenAlg genAlg(g_numVert,nPop,g_numDem,g_costServ,nGreedyServerPos);//20~30 chromosomes
+		//genAlg.startGA(85);
+		genAlg.startPSO(89,0.9*RAND_MAX,0.5*RAND_MAX,0.5*RAND_MAX,nType);
+		//genAlg.startPSO(85,1,2,2);
+		nMCTmp=genAlg.getMinCost();
+		if (nMinCost>nMCTmp){
+			nMinCost=nMCTmp;
+			nServerPos=genAlg.getBestServerPos();
+			nMCCount=0;
+		}
+		cout<<nMinCost<<endl;
+		}while (nMCCount<nTry);
+	}
 
 	//nMinCost=0;nServerPos.clear();nServerPos.insert(nMinPos,nMinPos+nMinPosCount);
-	//xjbs(g_numVert,g_costServ);
+	//xjbs();
 
 	cout<<"use time: "<<(clock()-g_tmStart)*1000/CLOCKS_PER_SEC<<"ms"<<endl;
 
@@ -324,11 +473,11 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	/*for_each(nMinServerPos.begin(),nMinServerPos.end(),[](int pos){
 		cout<<" "<<pos;
 	});*/
-	for (auto i=nServerPos.begin();i!=nServerPos.end();i++){
+	for (auto i=nServerPos.begin();i!=nServerPos.end();++i){
 		cout<<" "<<*i;
 	}
 	cout<<endl;
-	for (int i=0;i<nMinPosCount;i++)
+	for (int i=0;i<nMinPosCount;++i)
 		cout<<" "<<nMinPos[i];
 	cout<<endl;
 
@@ -350,7 +499,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 			networkSimplexAlg(nServerPos,g_edge);
 			nTotalCost=0;
 		}*/
-		for (int i=1;i<g_edgeCount;i++){
+		for (int i=0;i<g_edgeCount;++i){
 			g_edgeTmp[i].x=g_edge[i].x;
 		}
 		processNetwork(nServerPos,nTotalCost,g_edgeTmp,true);
@@ -358,12 +507,12 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 		networkSimplexAlg(nServerPos,g_edge);
 
 		cout<<"Final nMinCost="<<nTotalCost<<" minPos=";
-		for (auto i=nServerPos.begin();i!=nServerPos.end();i++)
+		for (auto i=nServerPos.begin();i!=nServerPos.end();++i)
 			cout<<" "<<*i;
 		cout<<endl;
 
-		int iMap=g_edgeCount-1-g_numVert;
-		for (int i=1;i<g_numVert+1;i++){
+		int iMap=g_srcEdge[1]-1;
+		for (int i=1;i<g_numVert+1;++i){
 			++iMap;
 			while (g_edge[iMap].x>0){
 				sout<<i-1<<" ";
@@ -404,7 +553,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 			v[nNum[1]+1].d=nNum[2];//it starts from point 0, but we let it from 1, the left one is all 0 except v0.d
 		}
 		nTmp=0;
-		for (int i=1;i<g_numVert+1;i++){
+		for (int i=1;i<g_numVert+1;++i){
 			if (v[i].id>0){
 				if (++nTmp==g_numDem)
 					sout<<i-1<<" "<<v[i].id-1<<" "<<v[i].d;
@@ -430,57 +579,84 @@ void branchAndBound(set<int>& nServerPos){
 
 }
 
-void networkSimplexAlg(set<int>& pos,NodeEdge g_edge[]){
-	int nTmp,nTmp2,nTmp3;
-	g_count2++;
+void netSAinit(NodeEdge g_edge[]){//0 is completely reset
 	//make an initial strongly feasible tree or solution
-	/*for (int i=1;i<g_edgeCount-g_numVert;i++){
+	for (int i=0;i<g_edgeCount-g_numVert;++i){
 		g_edge[i].x=0;
 	}
 	v[0].next=1;
-	v[1].prec=0;*/
-	for (int i=1;i<g_numVert+1;i++){
-		if (pos.find(i)!=pos.end()){
-			g_edge[g_edgeCount-1-g_numVert+i].c=0;
+	v[1].prec=0;
+	/*for (int i=0;i<g_edgeCount;++i){
+		g_edge[i].x=0;
+	}
+	g_edge[g_snkEdge[0]].x=g_totalDem;
+	v[g_numVert+1].parent=0;
+	v[g_numVert+1].directToParent=false;
+	v[g_numVert+1].depth=1;
+	v[g_numVert+1].next=0;
+	v[0].prec=g_numVert+1;
+	v[g_numVert+1].pi=-g_edge[g_snkEdge[0]].c;*/
+	for (int i=1;i<g_numVert+1;++i){
+		if (v[i].id>0){//d maybe 0
+			g_edge[g_srcEdge[i]].x=v[i].d;//the left xij is all 0, and the initial feasible tree <0,1~g_numVert> is strong for they're all away from 0
 		}else{
-			g_edge[g_edgeCount-1-g_numVert+i].c=g_costServ;
-		}
-		/*if (v[i].id>0){//d maybe 0
-			g_edge[g_edgeCount-1-g_numVert+i].x=v[i].d;//the left xij is all 0, and the initial feasible tree <0,1~g_numVert> is strong for they're all away from 0
-		}else{
-			g_edge[g_edgeCount-1-g_numVert+i].x=0;
+			g_edge[g_srcEdge[i]].x=0;
 		}
 		v[i].parent=0;//all point's parent is 0 && v[0].depth=0
 		v[i].directToParent=false;//v[i].direction=false cannot be omitted!!!
 		v[i].depth=1;//v[0].depth=0, depth is from 0
 		v[i].next=i+1;//i's next dfs node is i+1 except vn.next
-		v[i+1].prec=i;*/
+		v[i+1].prec=i;//notice overflow!!!
 	}
-	/*v[g_numVert].next=0;//!here is important
+	v[g_numVert].next=0;//!here is important
 	v[0].prec=g_numVert;
-	//calculate π[i], let π0=0 or the potential of the root is 0
-	for (int i=1;i<g_numVert+1;i++){//cπij=cij-πi+πj=0;here 0/g_costServ-0+πi=0
-		v[i].pi=-g_edge[g_edgeCount-1-g_numVert+i].c;
+	/*//calculate π[i], let π0=0 or the potential of the root is 0
+	for (int i=1;i<g_numVert+1;++i){//cπij=cij-πi+πj=0;here 0/g_costServ-0+πi=0
+		v[i].pi=-g_edge[g_srcEdge[i]].c;
 	}*/
+}
+void networkSimplexAlg(set<int>& pos,NodeEdge g_edge[]){
+	int nTmp,nTmp2,nTmp3;
+	g_count2++;
+	//make an initial strongly feasible tree or solution
+	for (int i=1;i<g_numVert+1;++i){
+		if (pos.find(i)!=pos.end()){
+			g_edge[g_srcEdge[i]].c=0;
+			//g_edge[g_srcEdge[i]].u=INT_MAX;
+		}else{
+			g_edge[g_srcEdge[i]].c=g_costServ;
+			//g_edge[g_srcEdge[i]].u=0;
+		}
+	}
 	int d;
 	for (int i=v[0].next;i!=0;i=v[i].next){
 		if (v[i].parent==0){
-			d=-g_edge[g_edgeCount-1-g_numVert+i].c-v[i].pi;
+			d=-g_edge[g_srcEdge[i]].c-v[i].pi;
 		}
 		v[i].pi+=d;
 	}
 	//find the maximum residual reduced cost(-cπij/cπij for L/U)
-	int max;
-	/*for (int i=0;i<g_numVert+1;i++){
-		for (int k=0;k<v[i].edge.size();k++){
-			int j=v[i].edge[k];
-			g[i][j].cpi=g[i][j].c-v[i].pi+v[j].pi;
-		}
+	/*for (int i=0;i<g_edgeCount;++i){
+		g_edge[i].cpi=g_edge[i].c-v[g_edge[i].idBegin].pi+v[g_edge[i].idEnd].pi;
+		if (g_bUseHeap) zkwtreeModify(i);
 	}*/
+	for (int i=0;i<g_edgeUnDCount-g_numVert;++i){
+		changeEdgeUnD(i,g_edge);
+	}
+	int iMapEdgeUnD=g_edgeUnDCount-g_numVert;
+	for (int i=1;i<g_numVert+1;++i){//only one direction & don't modify the idBegin or End
+		if (g_edge[g_srcEdge[i]].x==0)//here notice!!!
+			g_edgeUnD[iMapEdgeUnD].cpi=-(g_edge[g_srcEdge[i]].c+v[i].pi);
+		else
+			g_edgeUnD[iMapEdgeUnD].cpi=g_edge[g_srcEdge[i]].c+v[i].pi;//idBegin=0,End is i;
+		if (g_bUseHeap) zkwtreeModify(iMapEdgeUnD);
+		++iMapEdgeUnD;
+	}
+	int max;
 	do{
 		int p,q;
 		max=0;
-		/*for (int i=0;i<g_numVert+1;i++){//maybe cache can not save it leads to its slow speed!!!
+		/*for (int i=0;i<g_numVert+1;++i){//maybe cache can not save it leads to its slow speed!!!
 			for (int k=0;k<v[i].edge.size();k++){
 				int j=v[i].edge[k];
 				//if (!(!v[j].directToParent&&v[j].parent==i||v[i].directToParent&&v[i].parent==j)){//if the arc exists && it !∈ T;i!=j belongs to .u>0
@@ -499,22 +675,62 @@ void networkSimplexAlg(set<int>& pos,NodeEdge g_edge[]){
 				//}//if don't use this if, the speed will be boosted
 			}
 		}*/	
-		//int nTmTmp=clock();
-		for (int i=1;i<g_edgeCount;i++){
-			int ni=g_edge[i].idBegin;
-			int nj=g_edge[i].idEnd;
-			int nCpiij=g_edge[i].c-v[ni].pi+v[nj].pi;
-			if (g_edge[i].x==0){
-				if (nCpiij<-max){
-					max=-nCpiij;
-					p=ni;q=nj;
-					//break;
+		/*for (int j=0;j<g_numVert+1;++j){
+			for (int k=0;k<v[j].idEdge.size();++k){
+				int i=v[j].idEdge[k];
+				int ni=g_edge[i].idBegin;
+				int nj=g_edge[i].idEnd;
+				//int nCpiij=g_edge[i].c-v[ni].pi+v[nj].pi;
+				int nCpiij=g_edge[i].cpi;
+				if (g_edge[i].x==0){
+					if (nCpiij<-max){
+						max=-nCpiij;
+						p=ni;q=nj;
+						//break;
+					}
+				}else{
+					if (nCpiij>max){
+						max=nCpiij;
+						p=ni;q=nj;
+						//break;
+					}
 				}
-			}else{
-				if (nCpiij>max){
-					max=nCpiij;
-					p=ni;q=nj;
-					//break;
+			}
+		}*/
+		//int nTmTmp=clock();
+		if (g_bUseHeap){
+			/*int maxEdge=g_zkwtree.top_pos()-1;
+			max=g_zkwtree.pop();*/
+			int maxEdge=g_heap[0].mk;
+			max=g_heap[0].val;
+			//cout<<max<<" "<<maxEdge<<endl;
+			//p=g_edge[maxEdge].idBegin;q=g_edge[maxEdge].idEnd;
+			p=g_edgeUnD[maxEdge].idBegin;q=g_edgeUnD[maxEdge].idEnd;
+		}else{
+			/*int nCpiij;
+			for (int i=0;i<g_edgeCount;++i){
+				//if (g_edge[i].u){
+				if (g_edge[i].x==0){
+					nCpiij=-g_edge[i].cpi;
+					if (nCpiij>max){
+						max=nCpiij;
+						p=g_edge[i].idBegin;q=g_edge[i].idEnd;
+						//break;
+					}
+				}else{
+					nCpiij=g_edge[i].cpi;
+					if (nCpiij>max){
+						max=nCpiij;
+						p=g_edge[i].idBegin;q=g_edge[i].idEnd;
+						//break;
+					}
+				}
+				//}
+			}*/
+			for (int i=0;i<g_edgeUnDCount;++i){
+				if (g_edgeUnD[i].cpi>max){//this is a modified cpi!~
+					max=g_edgeUnD[i].cpi;
+					p=g_edgeUnD[i].idBegin;q=g_edgeUnD[i].idEnd;
 				}
 			}
 		}
@@ -673,6 +889,7 @@ void networkSimplexAlg(set<int>& pos,NodeEdge g_edge[]){
 			}
 			//update the tree T=T1+<p,q>or<q,p>+T2
 			if (k==p&&l==q){//don't update the tree structure&&πi;it's important to classify this situation for there's no concept of a higher node
+				changeEdgeUnD(g[p][q]>>1,g_edge);//0i cannot enter here!
 			}else{//(including the case of entering <p,q>&&deleting <q,p>)
 				int nH,nL,nPQH,nPQL;//nH means the higher node id between k&&l;nPQH means the higer node id between p&&q
 				if (v[k].depth<v[l].depth){
@@ -703,7 +920,7 @@ void networkSimplexAlg(set<int>& pos,NodeEdge g_edge[]){
 							}
 						}
 					}
-					if (num!=g_numVert+1){
+					if (num!=g_numVert+1+1){
 						cout<<"ErrorNum!";
 					}
 					//p=2;
@@ -775,6 +992,7 @@ void networkSimplexAlg(set<int>& pos,NodeEdge g_edge[]){
 					nTmp=nTmp3;//correct the T2 final node's pointing place
 				}
 				//update tree depth&&πi
+				//int nTmTmp=clock();
 				pSearch=nPQL;
 				v[pSearch].depth=v[v[pSearch].parent].depth+1;
 				if (nPQH==p&&bXpqL||nPQH==q&&!bXpqL){
@@ -782,12 +1000,25 @@ void networkSimplexAlg(set<int>& pos,NodeEdge g_edge[]){
 				}else{
 					v[pSearch].pi-=max;//vice versa
 				}
-				/*for (int i=0;i<v[pSearch].edge.size();i++){
-					int j=v[pSearch].edge[i];
-					g[pSearch][j].cpi=g[pSearch][j].c-v[pSearch].pi+v[j].pi;
-					g[j][pSearch].cpi=g[j][pSearch].c-v[j].pi+v[pSearch].pi;
+				/*for (int k=0;k<(int)v[pSearch].idEdge.size();++k){
+					int i=v[pSearch].idEdge[k];
+					g_edge[i].cpi=g_edge[i].c-v[pSearch].pi+v[g_edge[i].idEnd].pi;
+					if (g_bUseHeap) zkwtreeModify(i);
 				}
-				g[0][pSearch].cpi=g[0][pSearch].c-v[0].pi+v[pSearch].pi;*/
+				for (int k=0;k<(int)v[pSearch].idEdgeFrom.size();++k){
+					int i=v[pSearch].idEdgeFrom[k];
+					g_edge[i].cpi=g_edge[i].c-v[g_edge[i].idBegin].pi+v[pSearch].pi;
+					if (g_bUseHeap) zkwtreeModify(i);
+				}*/
+				for (int k=0;k<(int)v[pSearch].idEdge.size();++k){//pSearch cannot be 0
+					int i=v[pSearch].idEdge[k]>>1;//it's the same as using idEdgeUnD if both are from 0
+					changeEdgeUnD(i,g_edge);
+				}
+				if (g_edge[g_srcEdge[pSearch]].x==0)
+					g_edgeUnD[g_edgeUnDCount-g_numVert+pSearch-1].cpi=-(g_edge[g_srcEdge[pSearch]].c+v[pSearch].pi);
+				else
+					g_edgeUnD[g_edgeUnDCount-g_numVert+pSearch-1].cpi=g_edge[g_srcEdge[pSearch]].c+v[pSearch].pi;//idBegin=0,End is pSearch;
+				if (g_bUseHeap) zkwtreeModify(g_edgeUnDCount-g_numVert+pSearch-1);
 				while (v[pSearch].next!=nTmp){//traverse the T2;nTmp is released here for label
 					pSearch=v[pSearch].next;
 					v[pSearch].depth=v[v[pSearch].parent].depth+1;
@@ -796,18 +1027,80 @@ void networkSimplexAlg(set<int>& pos,NodeEdge g_edge[]){
 					}else{
 						v[pSearch].pi-=max;//vice versa
 					}
-					/*for (int i=0;i<v[pSearch].edge.size();i++){
-						int j=v[pSearch].edge[i];
-						g[pSearch][j].cpi=g[pSearch][j].c-v[pSearch].pi+v[j].pi;
-						g[j][pSearch].cpi=g[j][pSearch].c-v[j].pi+v[pSearch].pi;
+					for (int k=0;k<(int)v[pSearch].idEdge.size();++k){//pSearch cannot be 0
+						int i=v[pSearch].idEdge[k]>>1;//it's the same as using idEdgeUnD if both are from 0
+						changeEdgeUnD(i,g_edge);
 					}
-					g[0][pSearch].cpi=g[0][pSearch].c-v[0].pi+v[pSearch].pi;*/
+					if (g_edge[g_srcEdge[pSearch]].x==0)
+						g_edgeUnD[g_edgeUnDCount-g_numVert+pSearch-1].cpi=-(g_edge[g_srcEdge[pSearch]].c+v[pSearch].pi);
+					else
+						g_edgeUnD[g_edgeUnDCount-g_numVert+pSearch-1].cpi=g_edge[g_srcEdge[pSearch]].c+v[pSearch].pi;//idBegin=0,End is pSearch;
+					if (g_bUseHeap) zkwtreeModify(g_edgeUnDCount-g_numVert+pSearch-1);
 				}
+				//g_count+=clock()-nTmTmp;
 			}
 		}
+		//g_count+=clock()-nTmTmp;
 	}while (max!=0);
 }
 
+void changeEdgeUnD(int i,NodeEdge g_edge[]){
+	int ki=g_edgeUnD[i].idBegin,kj=g_edgeUnD[i].idEnd;
+	int ke=g[ki][kj];
+	if (g_edge[ke].x>0){//cpi maybe 0(x<u) or +cπij(x==u)
+		g_edgeUnD[i].cpi=g_edge[ke].c-v[ki].pi+v[kj].pi;
+		//the opposite way must be x==0&& cpi=-cπji=-(c-pij+pii)=pij-pii-c,so it's impossible greater than cpi now
+	}else if (g_edge[ke^1].x>0){//the opposite edge!~
+		g_edgeUnD[i].cpi=g_edge[ke].c-v[kj].pi+v[ki].pi;//the same reason & notice edge[ke^1].c is the same
+		g_edgeUnD[i].idBegin=kj;g_edgeUnD[i].idEnd=ki;//exchange the end points
+	}else{//both x=0 so both cpi=-cπij so take the smaller -pii+pij to make cpi larger
+		if (v[ki].pi>=v[kj].pi){
+			g_edgeUnD[i].cpi=-(g_edge[ke].c-v[ki].pi+v[kj].pi);//idBegin=ki;idEnd=kj;
+		}else{
+			g_edgeUnD[i].cpi=-(g_edge[ke].c-v[kj].pi+v[ki].pi);
+			g_edgeUnD[i].idBegin=kj;g_edgeUnD[i].idEnd=ki;//exchange the end points
+		}
+	}
+	if (g_bUseHeap) zkwtreeModify(i);
+}
+void zkwtreeModify(int i){
+	int _pos=g_edgeUnD[i].idHeap;
+	g_heap[_pos].val=g_edgeUnD[i].cpi;
+	//go down
+	int _secondChild=_pos*2+2;
+	while (_secondChild<g_edgeUnDCount){
+		if (g_heap[_secondChild]<g_heap[_secondChild-1])
+			--_secondChild;
+		if (g_heap[_secondChild].val<=g_edgeUnD[i].cpi)
+			break;
+		g_heap[_pos]=g_heap[_secondChild];
+		g_edgeUnD[g_heap[_pos].mk].idHeap=_pos;
+		_pos=_secondChild;
+		_secondChild=_pos*2+2;
+	}
+	if (_secondChild==g_edgeUnDCount){
+		//if (g_edgeUnD[i].cpi<g_heap[_secondChild-1].val){
+			g_heap[_pos]=g_heap[_secondChild-1];
+			g_edgeUnD[g_heap[_pos].mk].idHeap=_pos;
+			_pos=_secondChild-1;
+		//}
+	}
+	//go up
+	int _parent=(_pos-1)/2;
+	while (_pos>0&&g_heap[_parent].val<g_edgeUnD[i].cpi){
+		g_heap[_pos]=g_heap[_parent];
+		g_edgeUnD[g_heap[_pos].mk].idHeap=_pos;
+		_pos=_parent;
+		_parent=(_pos-1)/2;
+	}
+	g_heap[_pos].val=g_edgeUnD[i].cpi;g_heap[_pos].mk=i;//g_heap[_pos]=_val;
+	g_edgeUnD[i].idHeap=_pos;//_val.mk==i,and after= we have val.mk==_pos.mk
+	//g_zkwtree.modify(i+1,g_edgeUnD[i].cpi);
+	/*if (g_edge[i].x)
+		g_zkwtree.modify(i,g_edge[i].cpi);
+	else
+		g_zkwtree.modify(i,-g_edge[i].cpi);*/
+}
 void findOutgoing(int& k,int& l,bool& outPTop,bool bResult,
 				  int& min,int p,int q,bool bEqual,bool directPlus){
 	if (directPlus){
@@ -841,8 +1134,8 @@ void findOutgoing(int& k,int& l,bool& outPTop,bool bResult,
 
 bool calcCost(int& totalCost,int& totalNum,NodeEdge g_edge[],bool bTest){
 	int tmpNum=0;
-	for (int i=g_edgeCount-g_numVert;i<g_edgeCount;i++){
-		if (g_edge[i].x>0){
+	for (int i=1;i<g_numVert+1;++i){
+		if (g_edge[g_srcEdge[i]].x>0){
 			totalCost+=g_costServ;
 			tmpNum++;
 		}
@@ -850,7 +1143,7 @@ bool calcCost(int& totalCost,int& totalNum,NodeEdge g_edge[],bool bTest){
 	if (bTest&&tmpNum!=totalNum)
 		return false;
 	else{
-		for (int i=1;i<g_edgeCount-g_numVert;i++){//0 is empty
+		for (int i=0;i<g_edgeCount-g_numVert;++i){//0 is empty;*2-1
 			if (g_edge[i].x>0){
 				totalCost+=g_edge[i].x*g_edge[i].c;
 			}
@@ -858,7 +1151,6 @@ bool calcCost(int& totalCost,int& totalNum,NodeEdge g_edge[],bool bTest){
 		return true;
 	}
 }
-
 void processNetwork(set<int>& pos,int& totalCost,NodeEdge g_edge[],bool bMakeRoute,int bBug){
 	typedef pair<int,int> Pair;
 	map<int,int> mapFlowID;
@@ -866,7 +1158,7 @@ void processNetwork(set<int>& pos,int& totalCost,NodeEdge g_edge[],bool bMakeRou
 	for (int k=1;k<g_numDem+1;k++){
 		int i=vCons[k].vid;
 		if (pos.find(i)==pos.end()){//v[i].d>0
-			int iMap=g_edgeCount-1-g_numVert+i;
+			int iMap=g_srcEdge[i];
 			if (g_edge[iMap].x>0&&g_edge[iMap].x<v[i].d){
 				int nFlow,nFlowLeft=v[i].d-g_edge[iMap].x;
 				g_edge[iMap].x=v[i].d;
@@ -893,8 +1185,8 @@ void processNetwork(set<int>& pos,int& totalCost,NodeEdge g_edge[],bool bMakeRou
 					totalCost+=nFlowCost;
 				}else{
 					g_edge[iMap].x=v[i].d;
-					for (auto i=mapFlowID.begin();i!=mapFlowID.end();i++){
-						g_edge[g_edgeCount-1-g_numVert+i->first].x-=i->second;
+					for (auto i=mapFlowID.begin();i!=mapFlowID.end();++i){
+						g_edge[g_srcEdge[i->first]].x-=i->second;
 					}
 				}
 			}
@@ -902,22 +1194,22 @@ void processNetwork(set<int>& pos,int& totalCost,NodeEdge g_edge[],bool bMakeRou
 	}
 	if (bMakeRoute){
 		pos.clear();
-		for (int i=g_edgeCount-g_numVert;i<g_edgeCount;i++){
-			if (g_edge[i].x>0){
-				pos.insert(g_edge[i].idEnd);
+		for (int i=1;i<g_numVert+1;++i){
+			if (g_edge[g_srcEdge[i]].x>0){
+				pos.insert(g_edge[g_srcEdge[i]].idEnd);
 			}
 		}
 	}
 }
 void deleteFromNet(int j,int& flow,set<int>& pos,NodeEdge g_edge[]){
-	for (int k=0;k<v[j].idEdgeFrom.size()-1;k++){//-1 means no 0j
+	for (int k=0;k<(int)v[j].idEdgeFrom.size()-1;k++){//-1 means no 0j
 		int ijMap=v[j].idEdgeFrom[k];
 		if (g_edge[ijMap].x>0){
 			int i=g_edge[ijMap].idBegin;
 			if (flow>g_edge[ijMap].x)
 				flow=g_edge[ijMap].x;
 			if (pos.find(i)!=pos.end()){
-				g_edge[g_edgeCount-1-g_numVert+i].x-=flow;
+				g_edge[g_srcEdge[i]].x-=flow;
 			}else{
 				deleteFromNet(i,flow,pos,g_edge);
 			}
@@ -927,7 +1219,7 @@ void deleteFromNet(int j,int& flow,set<int>& pos,NodeEdge g_edge[]){
 	}
 }
 void deleteAndCalcFromNet(int j,int& flow,set<int>& pos,int& flowCost,int& srcID,NodeEdge g_edge[]){
-	for (int k=0;k<v[j].idEdgeFrom.size()-1;k++){//without 0j
+	for (int k=0;k<(int)v[j].idEdgeFrom.size()-1;k++){//without 0j
 		int ijMap=v[j].idEdgeFrom[k];
 		if (g_edge[ijMap].x>0){
 			int i=g_edge[ijMap].idBegin;
@@ -946,7 +1238,7 @@ void deleteAndCalcFromNet(int j,int& flow,set<int>& pos,int& flowCost,int& srcID
 }
 
 void printPath(int i,int& flow,ostream& sout){
-	for (int k=0;k<v[i].idEdge.size();k++){
+	for (int k=0;k<(int)v[i].idEdge.size();k++){
 		int ijMap=v[i].idEdge[k];
 		if (g_edge[ijMap].x>0){//&&g_edge[ijMap].u>0
 			int j=g_edge[ijMap].idEnd;
@@ -988,17 +1280,17 @@ void printTree(){
 		}
 		pSearch=v[pSearch].next;
 	}
-	while (v[pSearch].next!=0);
+	while (pSearch!=0);
 }
 
 GenAlg::GenAlg(int bitSize,int popSize,int g_numDem,int g_costServ,set<int> greedyPos):m_bestFit(0),
-	m_mutationRate(RAND_MAX*0.2),m_crossoverRate(RAND_MAX*0.9),//70%?80~95%?
+	m_mutationRate((int)(RAND_MAX*0.2)),m_crossoverRate((int)(RAND_MAX*0.9)),//70%?80~95%?
 	m_chromoBitSize(bitSize),//0.05~0.3?0.5~1%?
 	m_cServer(g_costServ),m_maxFit(g_numDem*g_costServ),
 	m_conCMax(10){//?
 	m_popSize=0;
 	/*int nSumD=bitSize;
-	for (int i=1;i<g_numDem+1;i++){
+	for (int i=1;i<g_numDem+1;++i){
 		nSumD+=v[vCons[i].vid].d;
 	}
 	cout<<nSumD<<endl;*/
@@ -1007,7 +1299,7 @@ GenAlg::GenAlg(int bitSize,int popSize,int g_numDem,int g_costServ,set<int> gree
 	while (m_popSize<popSize){
 		set<int> setTmp;
 		/*int k=rand();//*nSumD
-		for (int i=1;i<bitSize+1;i++){
+		for (int i=1;i<bitSize+1;++i){
 			//if (v[i].id>0){
 			//	if (rand()*(v[i].d+1)>=k)
 			//		setTmp.insert(i);
@@ -1017,10 +1309,10 @@ GenAlg::GenAlg(int bitSize,int popSize,int g_numDem,int g_costServ,set<int> gree
 			//	if (rand()>=k)
 			//		setTmp.insert(i);
 		}*/
-		for (int i=1;i<rand()%(bitSize+1)+1;i++){
+		for (int i=1;i<rand()%(bitSize+1)+1;++i){
 			setTmp.insert(rand()%bitSize+1);
 		}
-		/*for (int i=1;i<rand()%(g_numDem+1)+1;i++){//rand()*g_numDem/RAND_MAX+1
+		/*for (int i=1;i<rand()%(g_numDem+1)+1;++i){//rand()*g_numDem/RAND_MAX+1
 			setTmp.insert(vCons[rand()%g_numDem+1].vid);
 		}*/
 		setTmp.insert(sFixedServerPos.begin(),sFixedServerPos.end());
@@ -1032,12 +1324,12 @@ GenAlg::GenAlg(int bitSize,int popSize,int g_numDem,int g_costServ,set<int> gree
 }
 void GenAlg::calcFit(int timeS){
 	m_totalFit=0;
-	for (int i=0;i<m_popSize;i++){
+	for (int i=0;i<m_popSize;++i){
 		set<int> setTmp=m_pop[i].decodeToSet();
 		networkSimplexAlg(setTmp,g_edge);
 		int nTotalCost=0,nTotalNum=0;
 		if (0){
-			for (int i=1;i<g_edgeCount;i++){
+			for (int i=0;i<g_edgeCount;++i){
 				g_edgeTmp[i].x=g_edge[i].x;
 			}
 			processNetwork(setTmp,nTotalCost,g_edgeTmp,true);
@@ -1053,7 +1345,7 @@ void GenAlg::calcFit(int timeS){
 		if (nTotalCost<m_maxFit){
 			m_pop[i]=Genome(setTmp,m_maxFit-nTotalCost);
 			//m_pop[i].m_fitness=m_maxFit-nTotalCost;
-			if (m_pop[i].m_fitness>m_bestFit){
+			if (m_pop[i].m_fitness>m_bestGenome.m_fitness){
 				m_bestFit=m_pop[i].m_fitness;
 				m_bestGenome=m_pop[i];
 				m_convergCount=0;
@@ -1069,7 +1361,7 @@ Genome& GenAlg::getChromoRoulette(){
 	double dSlice=rand()*m_totalFit/RAND_MAX;
 	//Genome gChosen;
 	double dNowFitSum=0;
-	for (int i=0;i<m_pop.size();i++){
+	for (int i=0;i<(int)m_pop.size();++i){
 		dNowFitSum+=m_pop[i].m_fitness;
 		if (dNowFitSum>=dSlice){
 			//gChosen=m_pop[i];
@@ -1089,9 +1381,9 @@ void GenAlg::crossover(vector<int>& chromo1,vector<int>& chromo2,double crossove
 			pos=pos2;
 			pos2=nTmp;
 		}
-		if (chromo1.size()<pos/Genome::m_intBitNS+1)
+		if ((int)chromo1.size()<pos/Genome::m_intBitNS+1)
 			chromo1.resize(pos/Genome::m_intBitNS+1,0);
-		if (chromo2.size()<pos/Genome::m_intBitNS+1)
+		if ((int)chromo2.size()<pos/Genome::m_intBitNS+1)
 			chromo2.resize(pos/Genome::m_intBitNS+1,0);
 		int i=pos2/Genome::m_intBitNS,nTmp;
 		if (i<pos/Genome::m_intBitNS){
@@ -1100,7 +1392,7 @@ void GenAlg::crossover(vector<int>& chromo1,vector<int>& chromo2,double crossove
 			chromo1[i]|=chromo2[i]&(0x1<<Genome::m_intBitNS)-(0x1<<pos2%Genome::m_intBitNS);
 			chromo2[i]&=~((0x1<<Genome::m_intBitNS)-(0x1<<pos2%Genome::m_intBitNS));
 			chromo2[i]|=nTmp;
-			for (i=i+1;i<pos/Genome::m_intBitNS;i++){
+			for (i=i+1;i<pos/Genome::m_intBitNS;++i){
 				int nTmp=chromo1[i];
 				chromo1[i]=chromo2[i];
 				chromo2[i]=nTmp;
@@ -1122,7 +1414,7 @@ void GenAlg::crossover(vector<int>& chromo1,vector<int>& chromo2,double crossove
 void GenAlg::mutate(vector<int>& chromo){
 	int i=rand()%m_chromoBitSize+1;
 	if (rand()<m_mutationRate){
-		if (chromo.size()<i/Genome::m_intBitNS+1)
+		if ((int)chromo.size()<i/Genome::m_intBitNS+1)
 			chromo.resize(i/Genome::m_intBitNS+1,0);
 		chromo[i/Genome::m_intBitNS]^=0x1<<i%Genome::m_intBitNS;
 	}
@@ -1153,14 +1445,14 @@ void GenAlg::startGA(int timeS){
 			mutate(genomeF.m_genome);
 			popNew.push_back(genomeF);
 		}
-		for (i=0;i<m_popSize;i++){
+		for (i=0;i<m_popSize;++i){
 			m_pop[i]=popNew[i];
 		}
 	}
 }
 void GenAlg::startPSO(int timeS,int w,int c1,int c2,int type){
 	m_convergCount=0;
-	/*for (int i=0;i<m_popSize;i++){
+	/*for (int i=0;i<m_popSize;++i){
 		if (m_pop[i].m_genome.size()<m_chromoBitSize/Genome::m_intBitNS+1)
 			m_pop[i].m_genome.resize(m_chromoBitSize/Genome::m_intBitNS+1,0);
 		vector<int> nV0;
@@ -1177,6 +1469,8 @@ void GenAlg::startPSO(int timeS,int w,int c1,int c2,int type){
 		m_v.push_back(Genome(nV0));
 	}*/
 	m_pBest=m_pop;
+	if (g_numVert>200)
+		m_conCMax=200;
 	while (m_convergCount<m_conCMax){
 		m_convergCount++;
 		cout<<m_convergCount<<endl;
@@ -1193,7 +1487,7 @@ void GenAlg::startPSO(int timeS,int w,int c1,int c2,int type){
 					pos=pos2;
 					pos2=nTmp;
 				}
-				if (m_pop[i].m_genome.size()<pos/Genome::m_intBitNS+1)
+				if ((int)m_pop[i].m_genome.size()<pos/Genome::m_intBitNS+1)
 					m_pop[i].m_genome.resize(pos/Genome::m_intBitNS+1,0);
 				int nTmp=m_pop[i].m_genome[pos/Genome::m_intBitNS]&0x1<<pos%Genome::m_intBitNS;
 				m_pop[i].m_genome[pos/Genome::m_intBitNS]&=~(0x1<<pos%Genome::m_intBitNS);
@@ -1214,45 +1508,77 @@ void GenAlg::startPSO(int timeS,int w,int c1,int c2,int type){
 				m_pop[i].m_genome[j/Genome::m_intBitNS]+=m_v[i].m_genome[j/Genome::m_intBitNS]*1;
 			}
 			m_pop[i].m_genome[m_chromoBitSize/Genome::m_intBitNS]&=~((0x1<<Genome::m_intBitNS)-(0x1<<m_chromoBitSize%Genome::m_intBitNS+1));*/
-			i++;
+			++i;
 		}
-		/*int loop=0;
+		//type=3;
+		int loop=0;
 		Genome genomeLS=m_bestGenome;
 		do{
+			Genome genomeL=genomeLS;
 			int pos=rand()%m_chromoBitSize+1,pos2=rand()%m_chromoBitSize+1;
 			if (pos<pos2){
 				int nTmp=pos;
 				pos=pos2;
 				pos2=nTmp;
 			}
-			if (genomeLS.m_genome.size()<pos/Genome::m_intBitNS+1)
-				genomeLS.m_genome.resize(pos/Genome::m_intBitNS+1,0);
-			genomeLS.m_genome[pos/Genome::m_intBitNS]^=0x1<<pos%Genome::m_intBitNS;
-			genomeLS.m_genome[pos/Genome::m_intBitNS]^=0x1<<pos2%Genome::m_intBitNS;
-			set<int> setTmp=genomeLS.decodeToSet();
-			networkSimplexAlg(m_chromoBitSize,m_cServer,setTmp);
+			if (genomeL.m_genome.size()<pos/Genome::m_intBitNS+1)
+				genomeL.m_genome.resize(pos/Genome::m_intBitNS+1,0);
+			genomeL.m_genome[pos/Genome::m_intBitNS]^=0x1<<pos%Genome::m_intBitNS;
+			genomeL.m_genome[pos2/Genome::m_intBitNS]^=0x1<<pos2%Genome::m_intBitNS;
+			set<int> setTmp=genomeL.decodeToSet();
+			int nTmTmp=clock();
+			networkSimplexAlg(setTmp,g_edge);
 			int nTotalCost=0,nTotalNum=0;
-			processNetwork(m_chromoBitSize,setTmp,m_cServer,nTotalCost,true);
-			calcCost(m_cServer,m_chromoBitSize,nTotalCost,nTotalNum);
-			if (m_maxFit-nTotalCost>genomeLS.m_fitness){
+			if (type==1){
+				for (int i=0;i<g_edgeCount;++i){
+					g_edgeTmp[i].x=g_edge[i].x;
+				}
+				processNetwork(setTmp,nTotalCost,g_edgeTmp,true);
+				g_count+=clock()-nTmTmp;
+				calcCost(nTotalCost,nTotalNum,g_edgeTmp);//false
+			}else{
+				for (int k=1;k<g_numDem+1;k++){
+					int i=vCons[k].vid;
+					if (setTmp.find(i)==setTmp.end()){//v[i].d>0
+						int iMap=g_srcEdge[i];
+						if (g_edge[iMap].x>0){
+							nTotalCost=~0u>>1;
+							break;
+						}
+					}
+				}
+				if (nTotalCost!=~0u>>1){
+					nTotalCost+=setTmp.size()*g_costServ;
+					for (int i=0;i<g_edgeCount-g_numVert;++i){//0 is empty;*2-1
+						if (g_edge[i].x>0){
+							nTotalCost+=g_edge[i].x*g_edge[i].c;
+						}
+					}
+				}
+			}
+			if (m_maxFit-nTotalCost>=genomeLS.m_fitness){
 				genomeLS=Genome(setTmp,m_maxFit-nTotalCost);
 			}else
 				loop++;
 		}
-		while (loop<m_convergCount/2);
-		if (genomeLS.m_fitness>m_bestGenome.m_fitness){
-			m_bestGenome=genomeLS;
-		}*/
+		while (loop<m_chromoBitSize);
+		if (genomeLS.m_fitness>=m_bestGenome.m_fitness){
+			if (genomeLS!=m_bestGenome){
+				m_convergCount=0;
+				m_bestGenome=genomeLS;
+				m_bestFit=genomeLS.m_fitness;
+			}
+		}
 	}
 }
 void GenAlg::calcPGBest(int timeS,int type){
-	for (int i=0;i<m_popSize;i++){
+	for (int i=0;i<m_popSize;++i){
 		set<int> setTmp=m_pop[i].decodeToSet();
 		int nTmTmp=clock();
 		networkSimplexAlg(setTmp,g_edge);
 		int nTotalCost=0,nTotalNum=0;
 		if (type==1){
-			for (int i=1;i<g_edgeCount;i++){
+			for (int i=0;i<g_edgeCount;++i){
 				g_edgeTmp[i].x=g_edge[i].x;
 			}
 			processNetwork(setTmp,nTotalCost,g_edgeTmp,true);
@@ -1266,8 +1592,8 @@ void GenAlg::calcPGBest(int timeS,int type){
 			g_count+=clock()-nTmTmp;
 			nTotalCost=0;nTotalNum=setTmp.size();
 			calcCost(nTotalCost,nTotalNum,g_edge,false);
-		}else{
-			for (int i=1;i<g_edgeCount;i++){
+		}else if (type==2){
+			for (int i=0;i<g_edgeCount;++i){
 				g_edgeTmp[i].x=g_edge[i].x;
 			}
 			processNetwork(setTmp,nTotalCost,g_edgeTmp,true,1);
@@ -1275,6 +1601,26 @@ void GenAlg::calcPGBest(int timeS,int type){
 			g_count+=clock()-nTmTmp;
 			//nTotalCost=0;nTotalNum=setTmp.size();
 			calcCost(nTotalCost,nTotalNum,g_edgeTmp,false);
+		}else{
+			for (int k=1;k<g_numDem+1;k++){
+				int i=vCons[k].vid;
+				if (setTmp.find(i)==setTmp.end()){//v[i].d>0
+					int iMap=g_srcEdge[i];
+					if (g_edge[iMap].x>0){
+						nTotalCost=~0u>>1;
+						break;
+					}
+				}
+			}
+			if (nTotalCost!=~0u>>1){
+				//calcCost(nTotalCost,nTotalNum,g_edge,false);
+				nTotalCost+=setTmp.size()*g_costServ;
+				for (int i=0;i<g_edgeCount-g_numVert;++i){//0 is empty;*2-1
+					if (g_edge[i].x>0){
+						nTotalCost+=g_edge[i].x*g_edge[i].c;
+					}
+				}
+			}
 		}
 		if (nTotalCost<m_maxFit){
 			m_pop[i]=Genome(setTmp,m_maxFit-nTotalCost);
@@ -1293,7 +1639,7 @@ void GenAlg::calcPGBest(int timeS,int type){
 			break;
 	}
 }
-void xjbs(int g_numVert,int g_costServ){
+void xjbs(){
 	clock_t tmXjbStart=clock();
 	set<int> setPos;
 	int count=0;
@@ -1301,16 +1647,97 @@ void xjbs(int g_numVert,int g_costServ){
 	mt19937 mt(rd());
 	uniform_int_distribution<int> dist(1,g_numVert);
 	auto dice=bind(dist,mt);
-	for (int i=0;i<1000;i++){
+	for (int i=0;i<1000;++i){
 		int N=dice();
 		setPos.clear();
 		for (int j=0;j<N;j++){
 			setPos.insert(dice());
 		}
 		//printf("xjbs: %d\n",i);
+		netSAinit(g_edge);
 		networkSimplexAlg(setPos,g_edge);
 		//if (clock()-tmXjbStart>30*CLOCKS_PER_SEC)
 		//	break;
 	}
 	cout<<"xjbs used time: "<<clock()-tmXjbStart<<endl;
+}
+Flow& randomwalk(){
+	bitset<1010> dir_servers;
+	for (int i=0;i<g_numVert;++i){
+		if (v[i+1].id){
+			dir_servers[i]=1;
+		}
+	}
+	vector<dude> dudes;
+	int mx_dude=7;//7;
+	static int record[10000010];
+	Flow* best_flow=new Flow;
+	for (int i=0;1;++i){
+		if (i==0){
+			for (int i=0;i<mx_dude;++i){
+				dude d;
+				bitset<1010> ts=dir_servers;
+				if (i!=0){
+					ts[rand()%g_numVert].flip();
+				}
+				d.flow=new Flow(ts);
+				dudes.push_back(d);
+			}
+		}
+		for (int j=dudes.size()-1;j>=0;--j){
+			dude d;
+			bitset<1010> ts=dudes[j].flow->servers;
+			int pos=rand()%g_numVert;
+			while(ts[pos]==0&&rand()%3)
+				pos=rand()%g_numVert;
+			ts[pos].flip();
+			d.flow=new Flow(ts);
+			dudes.push_back(d);
+		}
+		sort(dudes.begin(),dudes.end());
+		/*auto dupItr=unique(dudes.begin(),dudes.end());
+		int delSize=dudes.end()-dupItr;
+		cout<<delSize<<endl;
+		while (delSize>0){
+			delete dudes.back().flow;
+			dudes.pop_back();
+			--delSize;
+		}*/
+		while ((int)dudes.size()>mx_dude){
+			delete dudes.back().flow;
+			dudes.pop_back();
+		}
+		if (i%int(20000.0/g_numVert+1)==0){
+			cout<<"Iteration "<<i+1<<": ";
+            for(int i=0;i<min((int)dudes.size(),5);++i)
+                cout<<dudes[i].flow->val()<<","<<dudes[i].flow->servers.count()<<" ";
+            cout<<endl;
+		}
+		record[i]=dudes[0].flow->val();
+		if (best_flow->val()>dudes[0].flow->val()){
+			*best_flow=*dudes[0].flow;
+			//cout<<best_flow->val()<<endl;
+		}
+		int gap=512;
+		if (i-gap>=0&&record[i-gap]==record[i]){
+			cout<<best_flow->val()<<endl;
+			i=-1;
+			while ((int)dudes.size()>0){
+				delete dudes.back().flow;
+				dudes.pop_back();
+			}
+			netSAinit(g_edge);
+			//break;
+		}
+		if (clock()-g_tmStart>89*CLOCKS_PER_SEC){
+			break;
+		}
+	}
+	cout<<"Best solution: "<<best_flow->val()<<endl;
+	for (int i=0;i<g_numVert;i++){
+		if (best_flow->servers[i])
+			cout<<" "<<i+1;
+	}
+	cout<<endl;
+	return *best_flow;
 }
