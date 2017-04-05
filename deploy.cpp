@@ -97,9 +97,9 @@ struct Flow{
 		int nTmTmp=clock();
 		//netSAinit(g_edge);
 		networkSimplexAlg(setTmp,g_edge);
-        int type=3,nTotalNum=0;//servers.count();
+		int type=3,nTotalNum=0;//servers.count();
 		int& nTotalCost=cost;
-        if (type==1){
+		if (type==1){
 			for (int i=0;i<g_edgeCount;++i){
 				g_edgeTmp[i].x=g_edge[i].x;
 			}
@@ -161,7 +161,6 @@ struct dude{
 	}
 };
 Flow& randomwalk();
-Flow xjb_search();
 
 //你要完成的功能总入口
 void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
@@ -337,34 +336,6 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 		}
 	}*/
 	//branchAndBound(g_numVert,g_costServ,nServerPos);
-	/*bitset<1010> seed,best;
-    for (int i=0;i<g_numVert;++i)
-        if (v[i+1].id)
-            seed[i]=1;
-    int z_seed=Flow(seed).val(),z_best;
-    cout<<"Direct Seed: "<<z_seed<<endl;
-    for(int changed=1,tm=0;changed;){
-        changed=0;
-        for(int i=0;i<g_numVert;++i){
-            ++tm;
-            seed[i].flip();
-            int t=Flow(seed).val();
-            if(t==~0u>>1){
-                seed[i].flip();
-                continue;
-            }
-            if(t<z_seed){
-                z_seed=t;
-                changed=1;
-            }else{
-                seed[i].flip();
-            }
-        }
-    }
-    cout<<"Greedy Seed: "<<z_seed<<endl;
-	for (int i=0;i<seed.size();++i){
-		nGreedyServerPos.insert(i+1);
-	}*/
 	if (g_numVert<200)
 	for (int k=0;k<g_numDem;k++){
 		int min2Cost=INT_MAX,min2Pos=0,minPos=0;
@@ -416,7 +387,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 			nGreedyServerPos.insert(minPos);
 			nMinPos[nMinPosCount]=minPos;
 			nMinPosCount++;
-			//cout<<nCostBefore<<" after greedy: "<<nMinCost<<" "<<"pos(in program):"<<minPos<<endl;
+			//cout<<nCostBefore<<" after greedy: "<<nMinCost<<endl;
 			//if (nCostBefore-nMinCost<g_costServ) break;
 		}else{
 			break;
@@ -452,18 +423,11 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 			break;
 	}*/
 	//GA-genetic algorithm
-
+	
 	srand((int)time(0));
 	int nTry=0;
-	if (g_numVert>500){
-        Flow best_flow=xjb_search();
-        nMinCost=best_flow.cost;
-        for (int i=0;i<g_numVert;i++){
-            if (best_flow.modifiedservers[i])
-                nServerPos.insert(i+1);
-        }
-        //delete &best_flow;
-	}else if(0){
+	if (g_numVert<2000){
+	}else{
 		Flow& best_flow=randomwalk();
 		nMinCost=best_flow.cost;
 		for (int i=0;i<g_numVert;i++){
@@ -472,12 +436,16 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 		}
 		delete &best_flow;
 	}
-	if (g_numVert<=500){
-		int nPop,nType=1;
+	if (g_numVert<2000){
+		if (g_numVert>=200){
+		//	nGreedyServerPos=nServerPos;
+		}
+		int nPop=200,nType=1;
 		if (g_numVert<200){
 			nPop=160;//500;
+		}else if(g_numVert<500){
+			nPop=400;
 		}else{
-			nPop=200;//200;
 			//nType=0;
 		}
 		int nMCTmp,nMCCount=0;
@@ -510,8 +478,6 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	});*/
 	for (auto i=nServerPos.begin();i!=nServerPos.end();++i){
 		cout<<" "<<*i;
-		if (v[*i].id)
-			cout<<"*";
 	}
 	cout<<endl;
 	for (int i=0;i<nMinPosCount;++i)
@@ -604,7 +570,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	cout<<"Total cost: "<<g_totalCost<<endl;
 	cout<<g_count<<endl<<"simplex num: "<<g_count2<<endl;
 	strTopo=strTopo;
-    cin.get();
+	cin.get();
 
 	// 直接调用输出文件的方法输出到指定文件中(ps请注意格式的正确性，如果有解，第一行只有一个数据；第二行为空；第三行开始才是具体的数据，数据之间用一个空格分隔开)
 	topo_file=strTopo.c_str();
@@ -1223,7 +1189,7 @@ void processNetwork(set<int>& pos,int& totalCost,NodeEdge g_edge[],bool bMakeRou
 					for (auto i=mapFlowID.begin();i!=mapFlowID.end();++i){
 						if (g_edge[g_srcEdge[i->first]].x==i->second){
 							nRealCost+=g_costServ;
-							break;
+							break;	
 						}
 					}
 					if (nRealCost>=g_costServ){
@@ -1232,7 +1198,7 @@ void processNetwork(set<int>& pos,int& totalCost,NodeEdge g_edge[],bool bMakeRou
 							g_edge[g_srcEdge[i->first]].x-=i->second;
 						}
 					}else*/
-					totalCost+=nFlowCost;
+						totalCost+=nFlowCost;
 				}else{
 					g_edge[iMap].x=v[i].d;
 					for (auto i=mapFlowID.begin();i!=mapFlowID.end();++i){
@@ -1252,8 +1218,8 @@ void processNetwork(set<int>& pos,int& totalCost,NodeEdge g_edge[],bool bMakeRou
 	}
 }
 void deleteFromNet(int j,int& flow,set<int>& pos,NodeEdge g_edge[]){
-	//for (int k=(int)v[j].idEdgeFrom.size()-2;k>=0;--k){//-1 means no 0j
-	for (int k=0;k<(int)v[j].idEdgeFrom.size()-1;k++){//-1 means no 0j
+	//for (int k=(int)v[j].idEdgeFrom.size()-2;k>0;--k){//-1 means no 0j
+	for (int k=0;k<(int)v[j].idEdgeFrom.size()-1;++k){//-1 means no 0j
 		int ijMap=v[j].idEdgeFrom[k];
 		if (g_edge[ijMap].x>0){
 			int i=g_edge[ijMap].idBegin;
@@ -1270,7 +1236,7 @@ void deleteFromNet(int j,int& flow,set<int>& pos,NodeEdge g_edge[]){
 	}
 }
 void deleteAndCalcFromNet(int j,int& flow,set<int>& pos,int& flowCost,int& srcID,NodeEdge g_edge[]){
-	for (int k=0;k<(int)v[j].idEdgeFrom.size()-1;k++){//without 0j
+	for (int k=0;k<(int)v[j].idEdgeFrom.size()-1;++k){//without 0j
 		int ijMap=v[j].idEdgeFrom[k];
 		if (g_edge[ijMap].x>0){
 			int i=g_edge[ijMap].idBegin;
@@ -1397,7 +1363,6 @@ void GenAlg::calcFit(int timeS){
 			m_pop[i]=Genome(setTmp,m_maxFit-nTotalCost);
 			//m_pop[i].m_fitness=m_maxFit-nTotalCost;
 			if (m_pop[i].m_fitness>m_bestGenome.m_fitness){
-				m_bestFit=m_pop[i].m_fitness;
 				m_bestGenome=m_pop[i];
 				m_convergCount=0;
 			}
@@ -1522,6 +1487,8 @@ void GenAlg::startPSO(int timeS,int w,int c1,int c2,int type){
 	m_pBest=m_pop;
 	if (g_numVert>200)
 		m_conCMax=200;
+	if (g_numVert>500)
+		m_conCMax=100;
 	while (m_convergCount<m_conCMax){
 		m_convergCount++;
 		cout<<m_convergCount<<endl;
@@ -1617,10 +1584,9 @@ void GenAlg::startPSO(int timeS,int w,int c1,int c2,int type){
 			if (genomeLS!=m_bestGenome){
 				m_convergCount=0;
 				m_bestGenome=genomeLS;
-				m_bestFit=m_bestGenome.m_fitness;
 			}
 		}
-		if (m_bestFit==m_maxFit-67623)
+		if (m_bestGenome.m_fitness==m_maxFit-67623)
 			break;
 	}
 }
@@ -1681,7 +1647,6 @@ void GenAlg::calcPGBest(int timeS,int type){
 			if (m_pop[i].m_fitness>m_pBest[i].m_fitness){
 				m_pBest[i]=m_pop[i];
 				if (m_pop[i].m_fitness>m_bestGenome.m_fitness){
-					m_bestFit=m_pop[i].m_fitness;
 					m_bestGenome=m_pop[i];
 					m_convergCount=0;
 				}
@@ -1782,7 +1747,7 @@ Flow& randomwalk(){
 			netSAinit(g_edge);
 			//break;
 		}
-		if (clock()-g_tmStart>89*CLOCKS_PER_SEC){
+		if (clock()-g_tmStart>87*CLOCKS_PER_SEC){
 			break;
 		}
 	}
@@ -1793,155 +1758,4 @@ Flow& randomwalk(){
 	}
 	cout<<endl;
 	return *best_flow;
-}
-
-typedef bitset<1010>facility;
-struct xjb_dude{
-    xjb_dude(facility f_){
-        f=f_;
-        v=Flow(f).val();
-        age=0;
-        contri=0;
-    }
-    facility f;
-    int v;
-    int age;
-    xjb_dude*pr;
-    int contri;
-};
-struct xjb_set{
-    xjb_set(facility f_,int v_){
-        f=f_;
-        v=v_;
-    }
-    facility f;
-    int v;
-};
-
-bool operator<(const xjb_set&a,const xjb_set&b){
-    if(a.v!=b.v)
-        return a.v<b.v;
-    for(int i=0;i<g_numVert;++i)
-        if(a.f[i]!=b.f[i])
-            return a.f[i]<b.f[i];
-    return false;
-}
-
-bool operator<(const xjb_dude&a,const xjb_dude&b){
-    if(a.v!=b.v)
-        return a.v<b.v;
-    for(int i=0;i<g_numVert;++i)
-        if(a.f[i]!=b.f[i])
-            return a.f[i]<b.f[i];
-    if(a.age!=b.age)
-        return a.age>b.age;
-    return false;
-}
-
-bool cmp(xjb_dude*a,xjb_dude*b){
-    return *a<*b;
-}
-
-bool operator==(const xjb_dude&a,const xjb_dude&b){
-    return a.f==b.f&&a.v==b.v;
-}
-
-bool operator!=(const xjb_dude&a,const xjb_dude&b){
-    return !(a==b);
-}
-
-Flow xjb_search(){
-    facility seed,best;
-    set<xjb_set>hash;
-    for (int i=0;i<g_numVert;++i)
-        if (v[i+1].id)
-            seed[i]=1;
-    int z_seed=Flow(seed).val(),z_best,z_seed_before=z_seed;
-    cout<<"Direct Seed: "<<z_seed<<endl;
-    for(int changed=1,tm=0;changed;){
-        changed=0;
-        for(int i=0;i<g_numVert;++i){
-            ++tm;
-            seed[i].flip();
-            int t=Flow(seed).val();
-            if(t==~0u>>1){
-                seed[i].flip();
-                continue;
-            }
-            if(t<z_seed){
-                z_seed=t;
-                changed=1;
-            }else{
-                seed[i].flip();
-            }
-        }
-    }
-    cout<<"Greedy Seed: "<<z_seed<<endl;
-    vector<xjb_dude*>dudes;
-    dudes.push_back(new xjb_dude(seed));
-    best=seed;
-    z_best=z_seed;
-    int max_qu=2;
-    for(int it=0;;++it){
-        for(int i=dudes.size()-1;i>=0;--i){
-            facility f=dudes[i]->f;
-            ++dudes[i]->age;
-            int pos=rand()%g_numVert;
-			while(f[pos]==0&&rand()%3){
-                pos=rand()%g_numVert;
-            }
-            f[pos].flip();
-            auto dude=new xjb_dude(f);
-            if(!hash.count(xjb_set(dude->f,dude->v))){
-                dudes.push_back(dude);
-                dudes.back()->pr=dudes[i];
-            }else{
-                delete dude;
-            }
-        }
-        sort(dudes.begin(),dudes.end(),cmp);
-        vector<xjb_dude*>new_dudes;
-        for(int i=0;i<dudes.size();++i){
-            if(i==0||*dudes[i]!=*dudes[i-1])
-                new_dudes.push_back(dudes[i]);
-            else{
-                delete dudes[i];
-			}
-        }
-        for(int i=0;i<new_dudes.size()&&i<max_qu;++i)
-            if(new_dudes[i]->age==0)
-                ++new_dudes[i]->pr->contri;
-        dudes.clear();
-        for(int i=0;i<new_dudes.size();++i){
-            if(new_dudes[i]->age>100){
-                hash.insert(xjb_set(new_dudes[i]->f,new_dudes[i]->v));
-                delete new_dudes[i];
-            }else{
-                dudes.push_back(new_dudes[i]);
-            }
-        }
-        while(dudes.size()>max_qu){
-            delete dudes.back();
-            dudes.pop_back();
-        }
-        if(z_best>dudes[0]->v){
-            z_best=dudes[0]->v;
-            best=dudes[0]->f;
-        }
-        if (it%int(40000.0/g_numVert+1)==0){
-            cout<<"Iteration "<<it+1<<": ";
-            for(int i=0;i<min((int)dudes.size(),5);++i)
-                cout<<dudes[i]->v<<","<<dudes[i]->f.count()<<","<<dudes[i]->age<<","<<dudes[i]->contri<<" ";
-            cout<<endl;
-			//cout<<hash.size()<<endl;
-            //cout<<endl;
-            //cout<<"Best solution: "<<z_best<<endl<<endl;
-        }
-        if (clock()-g_tmStart>87*CLOCKS_PER_SEC){
-            break;
-        }
-		if (z_best==67623)
-			break;
-    }
-    return Flow(best);
 }
