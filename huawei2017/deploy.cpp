@@ -75,7 +75,8 @@ bool calcCost(int& totalCost,int& totalNum,NodeEdge edge[],bool bTest=true);
 void printPath(int i,int& flow,ostream& sout);
 void printTree();
 void xjbs();
-
+bool startSA(int nMinCost,set<int> nMinPos,set<int> nGreedyServerPos);
+	
 struct Flow{
 	//NodeVertex* pbg;
 	//vector<NodeEdge> eg;
@@ -330,7 +331,8 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	}*/
 	set<int> nServerPos,nGreedyServerPos;
 	int nMinCost=g_numDem*g_costServ,nMinPos[MAX_CONSUME_NUM]={0},nMinPosCount=0;
-	/*int nMinCost=0,nMinPos[MAX_CONSUME_NUM]={7,13,15,22,37,38,43},nMinPosCount=7;
+	/*int nMinCost=0,nMinPos[MAX_CONSUME_NUM]={5,18,21,23,26,37,38,43,47,50,55,57,58,61,62,67,73,78,82,86,90,98
+	,104,107,109,115,124,127,129,136,138,140,148,156,159,160},nMinPosCount=36;
 	for (int i=0;i<nMinPosCount;++i){
 		if (nMinPos[i]>0){
 			nMinPos[i]++;
@@ -453,7 +455,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	}*/
 	//GA-genetic algorithm
 
-	srand((int)time(0));
+	/*srand((int)time(0));
 	int nTry=0;
 	if (g_numVert>500){
         Flow best_flow=xjb_search();
@@ -463,14 +465,6 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
                 nServerPos.insert(i+1);
         }
         //delete &best_flow;
-	}else if(0){
-		Flow& best_flow=randomwalk();
-		nMinCost=best_flow.cost;
-		for (int i=0;i<g_numVert;i++){
-			if (best_flow.modifiedservers[i])
-				nServerPos.insert(i+1);
-		}
-		delete &best_flow;
 	}
 	if (g_numVert<=500){
 		int nPop,nType=1;
@@ -495,10 +489,13 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 		}
 		cout<<nMinCost<<endl;
 		}while (nMCCount<nTry);
-	}
+	}*/
 
 	//nMinCost=0;nServerPos.clear();nServerPos.insert(nMinPos,nMinPos+nMinPosCount);
 	//xjbs();
+
+	//SA
+	startSA(nMinCost,nServerPos,nGreedyServerPos);
 
 	cout<<"use time: "<<(clock()-g_tmStart)*1000/CLOCKS_PER_SEC<<"ms"<<endl;
 
@@ -1913,7 +1910,7 @@ Flow xjb_search(){
                 ++new_dudes[i]->pr->contri;
         dudes.clear();
         for(int i=0;i<new_dudes.size();++i){
-            if(new_dudes[i]->age>100){
+            if(new_dudes[i]->age>80){
                 hash.insert(xjb_set(new_dudes[i]->f,new_dudes[i]->v));
                 delete new_dudes[i];
             }else{
@@ -1944,4 +1941,8 @@ Flow xjb_search(){
 			break;
     }
     return Flow(best);
+}
+bool startSA(int nMinCost,set<int> nMinPos,set<int> nGreedyServerPos){
+
+	return true;
 }
