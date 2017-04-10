@@ -76,6 +76,7 @@ void printPath(int i,int& flow,ostream& sout);
 void printTree();
 void xjbs();
 bool startSA(int nMinCost,set<int> nMinPos,set<int> nGreedyServerPos);
+bool startXjbs(int nMinCost,set<int> nMinPos,set<int> nGreedyServerPos);
 	
 struct Flow{
 	//NodeVertex* pbg;
@@ -232,42 +233,32 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 		vCons[nNum[0]+1].vid=nNum[1]+1;
 		g_totalDem+=nNum[2];
 	}
-	/*for (int i=0;i<g_numVert+1;++i){
+	/*int nCount1=0;
+	for (int i=0;i<g_numVert+1;++i){
 		int nTmp=0,nTmp2=0;
-		sort(v[i].edge.begin(),v[i].edge.end(),[i](int pos1,int pos2)->bool{
-			if (g[i][pos1].c<g[i][pos2].c){
-				return true;
-			}else
-				return false;
+		sort(v[i].idEdge.begin(),v[i].idEdge.end(),[i](int pos1,int pos2)->bool{
+			return g_edge[pos1].c<g_edge[pos2].c;
 		});
 		int nD=v[i].d;
-		for (int j=0;j<v[i].edge.size();j++){
-			nTmp+=g[i][v[i].edge[j]].u;
-			if (nD>=g[i][v[i].edge[j]].u){
-				nTmp2+=g[i][v[i].edge[j]].u*g[i][v[i].edge[j]].c;
-				nD-=g[i][v[i].edge[j]].u;
+		for (int j=0;j<v[i].idEdge.size();j++){
+			nTmp+=g_edge[v[i].idEdge[j]].u;
+			if (nD>=g_edge[v[i].idEdge[j]].u){
+				nTmp2+=g_edge[v[i].idEdge[j]].u*g_edge[v[i].idEdge[j]].c;
+				nD-=g_edge[v[i].idEdge[j]].u;
 			}else{
-				nTmp2+=nD*g[i][v[i].edge[j]].c;
+				nTmp2+=nD*g_edge[v[i].idEdge[j]].c;
 				nD=0;
+				break;
 			}
 		}
 		if (nTmp<v[i].d)
 			cout<<i<<endl;
 		if (nTmp2>=g_costServ){
 			cout<<"GT g_costServ: "<<i<<endl;
-			/*sFixedServerPos.insert(i);
-			for (int j=0;j<v[i].edge.size();j++){
-				g[i][v[i].edge[j]].u=0;
-				g[v[i].edge[j]][i].u=0;
-				for (int k=0;k<v[v[i].edge[j]].edge.size();k++){
-					if (v[v[i].edge[j]].edge[k]==i){
-						v[v[i].edge[j]].edge.erase(v[v[i].edge[j]].edge.begin()+k);
-					}
-				}
-			}
-			v[i].edge.clear();
+			++nCount1;
 		}
-	}*/
+	}
+	cout<<nCount1;*/
 	//make an initial of the networkSimplex
 	//v[0].d=INT_MAX;//sink will use v0.d
 	for (int i=1;i<g_numVert+1;++i){
@@ -495,7 +486,10 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 	//xjbs();
 
 	//SA
-	startSA(nMinCost,nServerPos,nGreedyServerPos);
+	//startSA(nMinCost,nServerPos,nGreedyServerPos);
+
+	//xjbs
+	startXjbs(nMinCost,nServerPos,nGreedyServerPos);
 
 	cout<<"use time: "<<(clock()-g_tmStart)*1000/CLOCKS_PER_SEC<<"ms"<<endl;
 
@@ -1944,5 +1938,25 @@ Flow xjb_search(){
 }
 bool startSA(int nMinCost,set<int> nMinPos,set<int> nGreedyServerPos){
 
+	return true;
+}
+
+bool startXjbs(int nMinCost,set<int> nMinPos,set<int> nGreedyServerPos){
+	int edgeCost[MAX_NODE_NUM+1];
+	for (int i=1;i<g_numVert+1;++i){
+		if (v[i].id){
+			edgeCost[i]=g_costServ/1;
+		}
+	}
+	for (int i=1;i<g_numVert+1;++i){
+		if (nMinPos.find(i)!=nMinPos.end()){
+			g_edge[g_srcEdge[i]].c=0;
+			//g_edge[g_srcEdge[i]].u=INT_MAX;
+		}else{
+			g_edge[g_srcEdge[i]].c=g_costServ;
+			//g_edge[g_srcEdge[i]].u=0;
+		}
+	}
+	networkSimplexAlg(nMinPos,g_edge);
 	return true;
 }
