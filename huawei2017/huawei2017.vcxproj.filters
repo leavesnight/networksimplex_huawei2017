@@ -18,21 +18,36 @@
     <ClCompile Include="cdn.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="io.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="deploy.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="io.cpp">
+    <ClCompile Include="deploy_solver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="deploy_solver_costflow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="deploy_solver_io.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="deploy.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="lib\lib_io.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="lib\lib_time.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="deploy.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="deploy_solver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="deploy_solver_heap.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -82,10 +82,15 @@
   <ItemGroup>
     <ClCompile Include="cdn.cpp" />
     <ClCompile Include="deploy.cpp" />
+    <ClCompile Include="deploy_solver.cpp" />
+    <ClCompile Include="deploy_solver_costflow.cpp" />
+    <ClCompile Include="deploy_solver_io.cpp" />
     <ClCompile Include="io.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="deploy.h" />
+    <ClInclude Include="deploy_solver.h" />
+    <ClInclude Include="deploy_solver_heap.h" />
     <ClInclude Include="lib\lib_io.h" />
     <ClInclude Include="lib\lib_time.h" />
   </ItemGroup>
