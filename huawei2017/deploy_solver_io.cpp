@@ -6,7 +6,25 @@
 #include <random>
 #include <functional>
 
-ServerSelectionSolver::ServerSelectionSolver(char* topo[MAX_EDGE_NUM],int line_num,int fast_mode):m_minCost(~0u>>1),g_bUseHeap(0),
+ServerSelectionSolver::~ServerSelectionSolver(){
+	delete []g_edge;
+	delete []g_edgeTmp;
+	delete []g_edgeUnD;
+	for (int i=0;i<g_numVert+m_numSS+2;++i){
+		delete []g[i];
+	}
+	delete []g;
+	delete []vCons;
+	delete []v;
+	delete []m_maxout;
+	delete []m_lagn;
+	delete []m_pnumSS;
+	for (int i=0;i<g_numVert;++i){
+		delete []g_srcEdge[i];
+	}
+	delete []g_srcEdge;
+}
+ServerSelectionSolver::ServerSelectionSolver(char* topo[MAX_EDGE_NUM],int line_num,int fast_mode):m_minCost(~0u>>1),g_bUseHeap(false),
 	m_copy(false),m_fast_mode(fast_mode){
 	//read parameters from topo
 	sscanf(topo[0],"%d %d %d",&g_numVert,&g_m,&g_numDem);
@@ -106,11 +124,16 @@ ServerSelectionSolver::ServerSelectionSolver(char* topo[MAX_EDGE_NUM],int line_n
 		for (int k=0;k<m_numSSFast-1;++k){//no need to judge if the last one for the initial!
 			if (m_maxout[i]<=g_pServFast[k].cap){
 				m_pos_serv[i]=k;
+				/*cout<<g_pServFast[k].cap-m_maxout[i]<<" ";
+				if (k>0&&(g_pServFast[k].cap-m_maxout[i]<(g_pServFast[k].cap-g_pServFast[k-1].cap)/2)){
+					--m_pos_serv[i];
+					//cout<<g_pServFast[k].cap-m_maxout[i]<<" ";
+				}*/
 				break;
 			}
 		}
-		if (m_pos_serv[i]>4)
-			m_pos_serv[i]=4;
+		//if (m_pos_serv[i]>4)
+		//	m_pos_serv[i]=4;
 		//cout<<m_pos_serv[i]<<" ";
 		if (m_maxCS<g_pServFast[m_pos_serv[i]].cost+g_pExtraCost[i])
 			m_maxCS=g_pServFast[m_pos_serv[i]].cost+g_pExtraCost[i];

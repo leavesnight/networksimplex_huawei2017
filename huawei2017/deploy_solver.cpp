@@ -160,6 +160,7 @@ void ServerSelectionSolver::startSolver(int timeS){
 		return;
 	}*/
 	//cout<<g_edgeUnDCount<<endl;
+	m_fixedServerPos.resize(g_numVert,m_numSSFast+1);
 	makejude(m_judgePos);
 	//0.67/0.87/0.77 0.19
 	int dmax=1;
@@ -167,7 +168,6 @@ void ServerSelectionSolver::startSolver(int timeS){
 		if (dmax<v[vCons[i]].d) dmax=v[vCons[i]].d;
 	}
 	m_unfixednum=0;
-	m_fixedServerPos.resize(g_numVert,m_numSSFast+1);
 	for (int i=0;i<g_numVert;++i){
 		if (m_judgePos[i]*1.0/RAND_MAX>=0.90)
 			;//m_fixedServerPos[i]=m_numSSFast+2;
@@ -177,7 +177,7 @@ void ServerSelectionSolver::startSolver(int timeS){
 			++m_unfixednum;
 	}
 	cout<<m_unfixednum<<endl;
-	/*if (g_numVert>10000){
+	if (g_numVert>10000){
 		vector<unsigned char> best(g_numVert,m_numSSFast);
 		for (int i=0;i<g_numVert;++i)
 			if (v[i].id)
@@ -219,10 +219,10 @@ void ServerSelectionSolver::startSolver(int timeS){
 		nGreedyServerPos=best;
 	}
 	int nTry=0;
-	if (g_numVert>10000){
-        xjb_search(88);
+	if (g_numVert<000){
+        xjb_search(timeS);
 	}
-	if (g_numVert<=10000){
+	if (g_numVert<000){
 		int nPop,nType=1;
 		if (g_numVert<1000){
 			nPop=10;//200;
@@ -246,12 +246,14 @@ void ServerSelectionSolver::startSolver(int timeS){
 		}
 		cout<<m_minCost<<endl;
 		}while (nMCCount<nTry);
-	}*/
+	}
 
 	//branchbound(88);
 
 	//SA-method
-	startSA(88);
+	if (g_numVert<11000){
+		startSA(timeS);
+	}
 
 	cout<<"use time: "<<(clock()-g_tmStart)*1000/CLOCKS_PER_SEC<<"ms"<<endl;
 
@@ -261,6 +263,7 @@ void ServerSelectionSolver::startSolver(int timeS){
 	/*for_each(nMinServerPos.begin(),nMinServerPos.end(),[](int pos){
 		cout<<" "<<pos;
 	});*/
+
 	int sum=0,min=~0u>>1;
 	int numServer=0;
 	for (int  i=0;i<g_numVert;++i){
@@ -269,14 +272,14 @@ void ServerSelectionSolver::startSolver(int timeS){
 			if (v[i].id)
 				cout<<"*"<<v[i].d;
 			/*cout<<" max"<<m_pos_serv[i]<<" use"<<(int)m_bestServerPos[i]<<" judgePos="<<m_judgePos[i]*1.0/RAND_MAX<<endl;
-			cout<<v[i].d<<" "<<m_maxout[i]<<" "<<g_pExtraCost[i]<<endl;
+			cout<<v[i].d<<" "<<m_maxout[i]<<" "<<g_pExtraCost[i]<<" "<<v[i].idEdge.size()<<endl;
 			sum+=m_judgePos[i];
 			if (v[i].d&&min>m_judgePos[i]) min=m_judgePos[i];
 			++numServer;*/
 		}
 	}
-	/*cout<<"Server num="<<numServer<<endl;
-	int num2000=0,numl2=0,num2d=0,numl2d=0;
+	//cout<<"Server num="<<numServer<<endl;
+	/*int num2000=0,numl2=0,num2d=0,numl2d=0;
 	for (int i=0;i<g_numVert;++i){
 		if (g_pExtraCost[i]==2000){
 			++num2000;
@@ -330,7 +333,7 @@ int ServerSelectionSolver::getRawCost(vector<unsigned char>& pos){
 	return cost;
 	for (int i=0;i<g_numVert;++i){
 		if (pos[i]<m_numSSFast){
-			cost+=g_pServFast[m_pos_serv[i]].cost+g_pExtraCost[i];
+			cost+=g_pServFast[pos[i]].cost+g_pExtraCost[i];
 		}
 	}
 	for (int i=0;i<g_m*2;++i){
@@ -733,6 +736,7 @@ void ServerSelectionSolver::startSA(int timeS){
 		int vid;
 	};
 	vector<NodeHeuris> v_h(g_numVert);
+	int cons_all=0;
 	for (int j=1;j<g_numDem+1;++j){
 		int i=vCons[j];
 		v_h[j-1].d=v[i].d;
@@ -743,7 +747,17 @@ void ServerSelectionSolver::startSA(int timeS){
 		int i=v_h[j].vid;
 		cout<<v_h[j].d<<" ";
 		pos[i]=m_pos_serv[i];//m_pnumSS[i]-1;
+		/*for (int i=0;i<m_pos_serv[i];++i){
+			if (v_h[j].d<=g_pServFast[i].cap){
+				pos[i]=i;
+				break;
+			}
+		}*/
 	}
+	/*for (int i=0;i<g_numDem;++i){
+		int pos_put=rand()%g_numVert;
+		pos[pos_put]=rand()%m_pnumSS[pos_put];
+	}*/
 	int cost=networkSimplexAlg(pos,g_edge);
 	calcCost(cost,g_edge);
 	if (cost<m_minCost){
@@ -752,24 +766,14 @@ void ServerSelectionSolver::startSA(int timeS){
 		cout<<"min0: "<<m_minCost<<endl;
 	}
 	vector<int> server_level(g_numVert);
-	int server_num=0;
+	int server_num,old_cost_SA=m_minCost;
+	vecRef.resize(g_numVert);
 	for (int i=0;i<g_numVert;++i){
-		if (g_edge[g_srcEdge[i][0]].x>0){
-			if (pos[i]!=m_numSSFast){
-				for (int k=m_pnumSS[i]-1;k>=0;--k){
-					if (g_edge[g_srcEdge[i][k]].x>0){
-						server_level[i]=k;
-						break;
-					}
-				}
-				++server_num;
-			}else{
-				while (1) cout<<"??"<<endl;
-			}
-		}else server_level[i]=m_numSSFast;
+		vecRef[i].vid=i;
 	}
+	updateSAInfo(server_num,server_level,pos);
 	double t=100;
-	if (g_numVert>1000)
+	if (g_numVert>=1000)
 		t=200;
 	int l=1,delta_t,converg=0,step=100;
 	do{
@@ -781,136 +785,108 @@ void ServerSelectionSolver::startSA(int timeS){
 				pos_new[pos_rand]=rand()%m_pnumSS[pos_rand];
 			else
 				pos_new[pos_rand]=m_numSSFast;*/
-			int pos_rand=rand()%server_num,i;
-			for (i=0;i<g_numVert;++i){
+			int pos_rand=rand()%server_num+1,i,old_level;
+			/*for (i=0;i<g_numVert;++i){
 				if (pos_new[i]!=m_numSSFast){
-					if (server_level[i]==m_numSSFast)
-						while (1) cout<<"??!!"<<i<<" "<<g_count2<<" "<<(int)pos_new[i]<<" "<<server_level[i]<<endl;
-					--pos_rand;
-					if (pos_rand==0){
+					//if (server_level[i]==m_numSSFast)
+					//	while (1) cout<<"??!!"<<i<<" "<<g_count2<<" "<<(int)pos_new[i]<<" "<<server_level[i]<<endl;
+					if (--pos_rand==0){
+						//old_level=pos_new[i];
 						pos_new[i]=m_numSSFast;
 						break;
 					}
 				}
-			}
-			int pos_rand2=rand()%v[i].idEdge.size();
-			int new_i=g_edge[v[i].idEdge[pos_rand2]].idEnd;
-			if (server_level[new_i]==m_numSSFast){
-				if (server_level[i]<m_pos_serv[new_i]+1)//m_pnumSS[new_i])
-					pos_new[new_i]=server_level[i];
-				else
+			}*/
+			//pos_rand=rand()%(server_num/2)+1;
+			i=vecRef[pos_rand-1].vid;
+			pos_new[i]=m_numSSFast;
+			int pos_rand2,new_i;
+			//if (rand()%2||converg<100){
+				pos_rand2=rand()%v[i].idEdge.size();
+				new_i=g_edge[v[i].idEdge[pos_rand2]].idEnd;
+				/*while (v[new_i].idEdge.size()==1&&v[i].idEdge.size()!=1){
+					pos_rand2=rand()%v[i].idEdge.size();
+					new_i=g_edge[v[i].idEdge[pos_rand2]].idEnd;
+				}*/
+				if (server_level[new_i]==m_numSSFast){
+					if (server_level[i]<m_pos_serv[new_i]+1)//m_pnumSS[new_i])
+						pos_new[new_i]=server_level[i];
+					else
+						pos_new[new_i]=m_pos_serv[new_i];//m_pnumSS[new_i]-1;
+				}else{
+					int flowall=0;
+					for (int k=m_pnumSS[i]-1;k>=0;--k){
+						if (g_edge[g_srcEdge[i][k]].x>0){
+							flowall+=g_edge[g_srcEdge[i][k]].x;
+							if (k>0)
+								flowall+=g_pServFast[k-1].cap;
+							break;
+						}
+					}
+					for (int k=m_pnumSS[new_i]-1;k>=0;--k){
+						if (g_edge[g_srcEdge[new_i][k]].x>0){
+							flowall+=g_edge[g_srcEdge[new_i][k]].x;
+							if (k>0)
+								flowall+=g_pServFast[k-1].cap;
+							break;
+						}
+					}
 					pos_new[new_i]=m_pos_serv[new_i];//m_pnumSS[new_i]-1;
-			}else{
-				//pos_new[new_i]=m_pnumSS[new_i]-1;
-				int flowall=0;
-				for (int k=m_pnumSS[i]-1;k>=0;--k){
-					if (g_edge[g_srcEdge[i][k]].x>0){
-						flowall+=g_edge[g_srcEdge[i][k]].x;
-						if (k>0)
-							flowall+=g_pServFast[k-1].cap;
-						break;
+					for (int k=0;k<m_pos_serv[new_i]+1;++k){//m_pnumSS[new_i];++k){
+						if (flowall<=g_pServFast[k].cap){
+							pos_new[new_i]=k;
+							break;
+						}
 					}
+					/*if (server_level[i]+1<m_pnumSS[new_i])
+						pos_new[new_i]=server_level[i]+1;
+					else
+						pos_new[new_i]=m_pnumSS[new_i]-1;*/
+					/*if (server_level[i]<server_level[new_i])
+						pos_new[new_i]=server_level[new_i];
+					else
+						pos_new[new_i]=server_level[i];*/
 				}
-				for (int k=m_pnumSS[new_i]-1;k>=0;--k){
-					if (g_edge[g_srcEdge[new_i][k]].x>0){
-						flowall+=g_edge[g_srcEdge[new_i][k]].x;
-						if (k>0)
-							flowall+=g_pServFast[k-1].cap;
+			/*}else{
+				new_i=i;
+				pos_new[new_i]=old_level;
+			}*/
+			//if (pos_new[new_i{]>(m_numSSFast-1)>>1){
+				int kServ=pos_new[new_i],old_cost=~0u>>1;
+				for (kServ=kServ;kServ>=0;--kServ){
+					pos_new[new_i]=kServ;
+					cost_new=judgefunc(pos_new);
+					if (old_cost<=cost_new)
 						break;
-					}
+					old_cost=cost_new;
 				}
-				pos_new[new_i]=m_pos_serv[new_i];//m_pnumSS[new_i]-1;
-				for (int k=0;k<m_pos_serv[new_i]+1;++k){//m_pnumSS[new_i];++k){
-					if (flowall<=g_pServFast[k].cap){
-						pos_new[new_i]=k;
-						break;
-					}
-				}
-				/*if (server_level[i]+1<m_pnumSS[new_i])
-					pos_new[new_i]=server_level[i]+1;
-				else
-					pos_new[new_i]=m_pnumSS[new_i]-1;*/
-				/*if (server_level[i]<server_level[new_i])
-					pos_new[new_i]=server_level[i];
-				else
-					pos_new[new_i]=server_level[new_i];*/
-			}
+				if (old_cost==~0u>>1) continue;
+				pos_new[new_i]=kServ+1;
+			//}
 			cost_new=judgefunc(pos_new);
 			//cout<<cost_new<<endl;
 			if (cost_new==~0u>>1){
 				continue;
 			}
-			delta_t=cost_new-m_minCost;
+			delta_t=cost_new-old_cost_SA;//m_minCost;//
 			//cout<<delta_t<<endl;
 			if (delta_t<=0){
 				pos=pos_new;
+				old_cost_SA=cost_new;
 				if (cost_new<m_minCost){
 					m_minCost=cost_new;
 					m_bestServerPos=pos_new;
 					converg=0;
 					cout<<"min_new: "<<m_minCost<<endl;
 				}
-				server_num=0;
-				for (int i=0;i<g_numVert;++i){
-					if (g_edge[g_srcEdge[i][0]].x>0){
-						if (pos[i]!=m_numSSFast){
-							if (m_fast_mode==1){
-								for (int k=0;k<=m_pos_serv[i];++k){
-									if (g_edge[g_srcEdge[i][0]].x<=g_pServFast[k].cap){
-										server_level[i]=k;
-										break;
-									}
-								}
-							}else
-								for (int k=m_pnumSS[i]-1;k>=0;--k){
-									if (g_edge[g_srcEdge[i][k]].x>0){
-										server_level[i]=k;
-										break;
-									}
-								}
-							++server_num;
-						}else{
-							while (1) cout<<"??"<<endl;
-						}
-					}else{
-						if (pos[i]!=m_numSSFast){
-							server_level[i]=0;
-						}else server_level[i]=m_numSSFast;
-					}
-				}
+				updateSAInfo(server_num,server_level,pos);
 			}else if (rand()<RAND_MAX*exp(-delta_t*1.0/t)){
 				pos=pos_new;
+				old_cost_SA=cost_new;
 				//cout<<cost_new<<endl;
 				cout<<step<<endl;
 				++step;
-				server_num=0;
-				for (int i=0;i<g_numVert;++i){
-					if (g_edge[g_srcEdge[i][0]].x>0){
-						if (pos[i]!=m_numSSFast){
-							if (m_fast_mode==1){
-								for (int k=0;k<=m_pos_serv[i];++k){
-									if (g_edge[g_srcEdge[i][0]].x<=g_pServFast[k].cap){
-										server_level[i]=k;
-										break;
-									}
-								}
-							}else
-								for (int k=m_pnumSS[i]-1;k>=0;--k){
-									if (g_edge[g_srcEdge[i][k]].x>0){
-										server_level[i]=k;
-										break;
-									}
-								}
-							++server_num;
-						}else{
-							while (1) cout<<"??"<<endl;
-						}
-					}else{
-						if (pos[i]!=m_numSSFast){
-							server_level[i]=0;
-						}else server_level[i]=m_numSSFast;
-					}
-				}
+				updateSAInfo(server_num,server_level,pos);
 			}
 			if (clock()-g_tmStart>timeS*CLOCKS_PER_SEC)
 				break;
@@ -919,19 +895,25 @@ void ServerSelectionSolver::startSA(int timeS){
 			t-=1000/step;
 		else
 			--t;*/
-		if (cost_new!=~0u>>1)
-			t*=0.9999;
+		if (cost_new!=~0u>>1){
+			if (g_numVert<1000)
+				t*=0.9999;
+			else
+				t*=0.9996;
+		}
 		++converg;
-		if (t<1) cout<<t<<endl;
 		if (clock()-g_tmStart>timeS*CLOCKS_PER_SEC)
 			break;
 	}while (t>0);//&&converg<100);
 	cout<<cost<<" T="<<t<<" converg="<<converg<<endl;
 }
-int ServerSelectionSolver::judgefunc(vector<unsigned char> pos){
+int ServerSelectionSolver::judgefunc(vector<unsigned char>& pos){
 	int cost=networkSimplexAlg(pos,g_edge);
 	if (cost==~0u>>1) return cost;
-	//processNetwork(pos,cost,g_edge,true,1);
+	/*for (int i=0;i<g_edgeCoreCount;++i)
+		g_edgeTmp[i]=g_edge[i];
+	processNetwork(pos,cost,g_edgeTmp,false,1);
+	calcCost(cost,g_edgeTmp);*/
 	//calcCost(cost,g_edge);
 	cost=getRawCost(pos);
 	return cost;
@@ -953,4 +935,101 @@ void ServerSelectionSolver::makejude(vector<int>& m_judgePos){
 		m_judgesum+=m_judgePos[i];
 	}
 	cout<<endl;
+	int del_num=0;
+	for (int i=0;i<g_numVert;++i){
+		if (v[i].id==0){
+			//cout<<v[i].idEdge.size()<<" ";
+			if (v[i].idEdge.size()==1){
+				++del_num;
+				m_fixedServerPos[i]=m_numSSFast;
+			}
+		}
+	}
+	cout<<endl;
+	for (int i=1;i<g_numDem+1;++i){
+		//cout<<v[vCons[i]].idEdge.size()<<" ";
+		if (v[i].idEdge.size()==1){
+			++del_num;
+			m_fixedServerPos[i]=m_numSSFast;
+		}
+	}
+	cout<<del_num<<endl;
+	cout<<endl;
+}
+void ServerSelectionSolver::updateSAInfo(int& server_num,vector<int>& server_level,vector<unsigned char>& pos){
+	server_num=0;
+	for (int i=0;i<g_numVert;++i){
+		if (g_edge[g_srcEdge[i][0]].x>0){
+			if (pos[i]!=m_numSSFast){
+				if (m_fast_mode==1){
+					for (int k=0;k<=m_pos_serv[i];++k){
+						if (g_edge[g_srcEdge[i][0]].x<=g_pServFast[k].cap){
+							server_level[i]=k;
+							if (pos[i]>k) --pos[i];
+							else if (pos[i]<k) pos[i]=k;
+							break;
+						}
+					}
+				}else
+					for (int k=m_pnumSS[i]-1;k>=0;--k){
+						if (g_edge[g_srcEdge[i][k]].x>0){
+							server_level[i]=k;
+							if (pos[i]>k) --pos[i];
+							else if (pos[i]<k) pos[i]=k;
+							break;
+						}
+					}
+				++server_num;
+			}else{
+				//while (1) cout<<"??"<<endl;
+				if (m_fast_mode==1){
+					for (int k=0;k<=m_pos_serv[i];++k){
+						if (g_edge[g_srcEdge[i][0]].x<=g_pServFast[k].cap){
+							server_level[i]=k;
+							if (pos[i]>k) --pos[i];
+							break;
+						}
+					}
+				}else
+					for (int k=m_pnumSS[i]-1;k>=0;--k){
+						if (g_edge[g_srcEdge[i][k]].x>0){
+							server_level[i]=k;
+							if (pos[i]>k) --pos[i];
+							break;
+						}
+					}
+				++server_num;
+			}
+		}else{
+			if (pos[i]!=m_numSSFast){
+				server_level[i]=m_numSSFast-1;
+				//server_level[i]=0;
+				++server_num;
+			}else server_level[i]=m_numSSFast;
+		}
+	}
+	for (int j=0;j<g_numVert;++j){
+		int i=vecRef[j].vid;
+		if (g_edge[g_srcEdge[i][0]].x>0){
+			for (int k=m_pnumSS[i]-1;k>=0;--k){
+				if (g_edge[g_srcEdge[i][k]].x>0){
+					vecRef[j].x=g_edge[g_srcEdge[i][k]].x;
+					if (k>0)
+						vecRef[j].x+=g_pServFast[k-1].cap;
+					break;
+				}
+			}
+		}else{
+			vecRef[j].x=0;
+		}
+	}
+	sort(vecRef.begin(),vecRef.end(),[&pos,this](NodePoint& a,NodePoint& b){
+		if (a.x==0&&b.x==0){
+			if (pos[a.vid]!=m_numSSFast)
+				return true;
+			else
+				return false;
+		}else
+			return a.x>b.x;
+	});
 }

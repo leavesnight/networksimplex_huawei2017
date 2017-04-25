@@ -18,7 +18,6 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
 		write_result("NA", filename);
 		return;
 	}
-	//g_tmStart=clock();
 	srand((int)time(0));
 	sssolver.startSolver(88);
 	//sssolver.xjbs();
@@ -47,9 +46,6 @@ GenAlg::GenAlg(int popSize,ServerSelectionSolver* _psssr,vector<unsigned char>& 
 		vector<unsigned char> posTmp(m_chromoBitSize,psssr->m_numSSFast);
 		for (int i=0;i<=rand()%m_chromoBitSize;++i){
 			int pos=rand()%m_chromoBitSize;
-			while (psssr->m_fixedServerPos[pos]<psssr->m_numSSFast+1){
-				pos=rand()%m_chromoBitSize;
-			}
 			posTmp[pos]=rand()%psssr->m_pnumSS[pos];
 		}
 		//setTmp.insert(sFixedServerPos.begin(),sFixedServerPos.end());
@@ -173,12 +169,6 @@ void GenAlg::startPSO(int timeS,int w,int c1,int c2,int type){
 			Genome genomeP=m_pBest[i],genomeG=m_bestGenome;
 			if (rand()<w){
 				int pos=rand()%m_chromoBitSize,pos2=rand()%m_chromoBitSize;
-				while (psssr->m_fixedServerPos[pos]<psssr->m_numSSFast+1){
-					pos=rand()%m_chromoBitSize;
-				}
-				while (psssr->m_fixedServerPos[pos2]<psssr->m_numSSFast+1){
-					pos2=rand()%m_chromoBitSize;
-				}
 				if (pos<pos2){
 					int nTmp=pos;
 					pos=pos2;
@@ -204,9 +194,6 @@ void GenAlg::startPSO(int timeS,int w,int c1,int c2,int type){
 			int pos,test=0;
 			for (int i=0;i<2;++i){
 				pos=rand()%m_chromoBitSize;
-				while (psssr->m_fixedServerPos[pos]<psssr->m_numSSFast+1){
-					pos=rand()%m_chromoBitSize;
-				}
 				if (genomeL.m_genome[pos]==psssr->m_numSSFast){
 					genomeL.m_genome[pos]=rand()%psssr->m_pnumSS[pos];
 					test=1;
@@ -466,6 +453,9 @@ void ServerSelectionSolver::xjb_search(int timeS){
 		}
 		if (time_up) break;
 	}
+	/*startSA(10);
+	z_seed=m_minCost;
+	nServerPos=m_bestServerPos;*/
 	cout<<"Greedy Seed: "<<z_seed<<endl;
     vector<xjb_dude*> dudes;
     dudes.push_back(new xjb_dude(nServerPos,this));
@@ -480,11 +470,11 @@ void ServerSelectionSolver::xjb_search(int timeS){
 			vector<unsigned char> f=dudes[i]->f;
 			++dudes[i]->age;
 			int pos=rand()%g_numVert;
-			while(f[pos]==m_numSSFast&&rand()%3){
+			while(f[pos]==m_numSSFast&&rand()%3||m_fixedServerPos[pos]==m_numSSFast){
 				pos=rand()%g_numVert;
 			}
 			if (f[pos]==m_numSSFast)
-				f[pos]=0;//rand()%m_pnumSS[pos];
+				f[pos]=rand()%m_pnumSS[pos];
 			else
 				f[pos]=m_numSSFast;
 			auto dude=new xjb_dude(f,this);

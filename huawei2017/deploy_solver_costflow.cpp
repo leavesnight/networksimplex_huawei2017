@@ -122,7 +122,7 @@ int ServerSelectionSolver::networkSimplexAlg(vector<unsigned char>& pos,NodeEdge
 	if (m_fast_mode==1){
 		for (int i=0;i<g_numVert;++i){
 			if (pos[i]==m_numSSFast){
-				g_edge[g_srcEdge[i][0]].c=m_maxCS;//g_pServFast[m_pos_serv[i]].cost+g_pExtraCost[i];
+				g_edge[g_srcEdge[i][0]].c=m_maxCS;//g_pServFast[m_pos_serv[i]].cost+g_pExtraCost[i];//
 				//g_edge[g_srcEdge[i][0]].u=g_pServFast[m_pos_serv[i]].cap;
 			}else{//<m_numSS here is a pos[i] type server
 				g_edge[g_srcEdge[i][0]].c=0;
@@ -137,13 +137,13 @@ int ServerSelectionSolver::networkSimplexAlg(vector<unsigned char>& pos,NodeEdge
 		for (int i=0;i<g_numVert;++i){
 			if (pos[i]==m_numSSFast){
 				for (int k=0;k<m_pnumSS[i];++k)
-					g_edge[g_srcEdge[i][k]].c=g_pServFast[k].cost+g_pExtraCost[i];
+					g_edge[g_srcEdge[i][k]].c=g_pServFast[k].cost+g_pExtraCost[i];//INT_MAX;//
 			}else{//<m_numSS here is a pos[i] type server
 				if (pos[i]<m_pnumSS[i]){
 					for (int k=0;k<=pos[i];++k)
 						g_edge[g_srcEdge[i][k]].c=0;
 					for (int k=pos[i]+1;k<m_pnumSS[i];++k)
-						g_edge[g_srcEdge[i][k]].c=g_pServFast[k].cost-g_pServFast[pos[i]].cost;
+						g_edge[g_srcEdge[i][k]].c=g_pServFast[k].cost-g_pServFast[pos[i]].cost;//INT_MAX;//
 				}else
 					for (int k=0;k<m_pnumSS[i];++k)
 						g_edge[g_srcEdge[i][k]].c=0;
@@ -231,8 +231,7 @@ int ServerSelectionSolver::networkSimplexAlg(vector<unsigned char>& pos,NodeEdge
 			p=g_edgeUnD[maxEdge].idBegin;q=g_edgeUnD[maxEdge].idEnd;
 		}else{
 			/*int nCpiij;
-			for (int i=0;i<g_edgeCount;++i){
-				//if (g_edge[i].u){
+			for (int i=0;i<g_edgeUnDCount;++i){
 				if (g_edge[i].x==0){
 					nCpiij=-g_edge[i].cpi;
 					if (nCpiij>max){
@@ -248,7 +247,6 @@ int ServerSelectionSolver::networkSimplexAlg(vector<unsigned char>& pos,NodeEdge
 						//break;
 					}
 				}
-				//}
 			}*/
 			if (m_fast_mode==2){
 				for (int i=0;i<g_edgeCoreUnDCount;++i){
@@ -461,7 +459,7 @@ int ServerSelectionSolver::networkSimplexAlg(vector<unsigned char>& pos,NodeEdge
 				}else{//vice versa
 					nPQH=p;nPQL=q;
 				}
-		
+				
 				//enter <p,q>or<q,p>;only enter
 				/*if (1||p==160&&q==99){
 					int pCheck=m_root,num=1;
@@ -623,13 +621,13 @@ int ServerSelectionSolver::networkSimplexAlg(vector<unsigned char>& pos,NodeEdge
 		}
 		//g_count+=clock()-nTmTmp;
 	}while (max!=0);
-	if (m_fast_mode==1){
+	/*if (m_fast_mode==1){
 		for (int i=g_edgeCount-g_numDem-1;i<g_edgeCount;++i)
 			if (g_edge[i].x!=0){
 				cout<<"NA"<<endl;
 				return ~0u>>1;
 			}
-	}
+	}*/
 	return 0;
 }
 void ServerSelectionSolver::changeEdgeDUnD(int i,NodeEdge g_edge[]){//if i>=g_m*2, input i is the id of g_edge!

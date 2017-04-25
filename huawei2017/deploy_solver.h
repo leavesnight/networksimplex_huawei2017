@@ -17,12 +17,19 @@ extern int g_count,g_count2;
 class ServerSelectionSolver{
 public:
 	ServerSelectionSolver(char* topo[MAX_EDGE_NUM],int line_num,int fast_mode=0);
+	~ServerSelectionSolver();
 	bool isapNA();
 	void startSolver(int timeS=88);
 	const char* getResult();
 	void xjbs();
 	int getRawCost(vector<unsigned char>& pos);
 private:
+	struct NodePoint{
+		int x;
+		int vid;
+	};
+	vector<NodePoint> vecRef;
+
 	int g_numVert,g_numDem,g_m,g_totalDem;
 	struct NodeServer{
 		int id;
@@ -106,7 +113,8 @@ private:
 	void branchbound(int timeS);
 	int calBBbound(vector<unsigned char> pos,int& posBranch);
 	void startSA(int timeS);
-	int judgefunc(vector<unsigned char> pos);
+	void updateSAInfo(int& server_num,vector<int>& server_level,vector<unsigned char>& pos);
+	int judgefunc(vector<unsigned char>& pos);
 	//bool startXjbs(int nMinCost,set<int> nMinPos,set<int> nGreedyServerPos);
 	friend struct Flow;
 	friend class GenAlg;
